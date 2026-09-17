@@ -111,7 +111,24 @@ kbd {
 .nav a:hover { color: var(--ink); background: var(--sunk); }
 .nav a[aria-current="page"] { background: var(--sunk); color: var(--ink); font-weight: 600; }
 .count { font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); font-weight: 400; }
-.rail-help { margin-top: auto; background: none; border: 0; padding: var(--s1) var(--s2); text-align: left; font-size: 12.5px; color: var(--ink-3); display: flex; gap: var(--s2); align-items: center; }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--s2); }
+.rail-account { display: flex; align-items: center; gap: 10px; width: 100%; padding: var(--s2); border-radius: var(--r-md); border: 1px solid var(--rule); background: var(--card); text-align: left; text-decoration: none; color: var(--ink); }
+button.rail-account { flex-direction: column; align-items: flex-start; gap: 0; }
+.rail-account:hover { border-color: var(--rule-2); }
+.rail-account .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--pine); color: var(--on-pine); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
+.rail-account .acct-text { display: flex; flex-direction: column; min-width: 0; }
+.acct-main { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.acct-sub { font-size: 12px; color: var(--ink-3); }
+.acct-error { color: var(--alarm); }
+.signin { display: flex; flex-direction: column; gap: var(--s2); }
+.signin-btn { width: 100%; padding: 9px var(--s3); }
+.signin-or { display: flex; align-items: center; gap: var(--s3); color: var(--ink-3); font-size: 12.5px; margin: var(--s1) 0; }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; border-top: 1px solid var(--rule); }
+.signin-email { display: flex; flex-direction: column; gap: var(--s2); }
+.choice { display: flex; flex-direction: column; gap: var(--s2); }
+.choice-btn { flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s3); white-space: normal; text-align: left; }
+.choice-btn span { font-size: 13px; color: var(--ink-3); font-weight: 400; }
+.rail-help { background: none; border: 0; padding: var(--s1) var(--s2); text-align: left; font-size: 12.5px; color: var(--ink-3); display: flex; gap: var(--s2); align-items: center; }
 .rail-help:hover { color: var(--ink); }
 
 .main { min-width: 0; width: 100%; max-width: 1060px; padding: var(--s8) var(--s10) 96px; }
@@ -553,6 +570,16 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
   window.U = U;
 })();
 
+/* Account settings. Leave supabaseUrl empty to run Keepclear without sign-in.
+   The publishable (anon) key is meant to be public: Row Level Security in
+   supabase/schema.sql is what keeps each person's data private.
+   Never put a secret or service_role key here. */
+window.KEEPCLEAR_CONFIG = {
+  supabaseUrl: '',          // e.g. 'https://abcd1234.supabase.co'
+  supabaseKey: '',          // Project Settings > API Keys > publishable key (or the legacy anon key)
+  providers: ['google'],    // add 'apple' once Sign in with Apple is configured in Supabase
+};
+
 /* App state: starts empty, with best-effort local persistence. */
 (function () {
   const STORE_KEY = 'margin.state.v2';
@@ -579,22 +606,25 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     };
   }
 
+  // Fills in anything older saves are missing. Used for this browser's data and for data from an account.
+  function normalize(saved) {
+    if (!saved || saved.version !== 2) return empty();
+    const base = empty();
+    const T = U.todayKey();
+    for (const key of Object.keys(base)) if (saved[key] == null) saved[key] = base[key];
+    saved.settings = { ...base.settings, ...saved.settings };
+    for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
+    delete saved.friends; // Friends feature removed until sign-in exists
+    return saved;
+  }
+
   function load() {
     OLD_KEYS.forEach((k) => U.store.del(k));
-    const saved = U.store.get(STORE_KEY);
-    if (saved && saved.version === 2) {
-      const T = U.todayKey();
-      if (saved.plans) for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
-      saved.log = saved.log || {};
-      saved.series = saved.series || [];
-      delete saved.friends; // Friends feature removed until sign-in exists
-      return saved;
-    }
-    return empty();
+    return normalize(U.store.get(STORE_KEY));
   }
 
   window.Data = {
-    empty, load,
+    empty, load, normalize,
     save(state) { U.store.set(STORE_KEY, state); },
     clear() { U.store.del(STORE_KEY); return empty(); },
     INTERESTS: ['guitar', 'running', 'cooking', 'friends', 'drawing', 'podcasts', 'reading', 'basketball', 'gaming', 'photography', 'baking', 'yoga'],
@@ -1733,6 +1763,238 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
   window.AI = AI;
 })();
 
+/* Accounts and cloud save through Supabase. Keepclear works fully without it:
+   when no project is configured (or inside a Claude artifact) this stays off. */
+(function () {
+  const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js';
+  const META_KEY = 'keepclear.sync.v1';
+  const TABLE = 'user_data';
+  const cfg = window.KEEPCLEAR_CONFIG || {};
+
+  const A = {
+    configured: !!(cfg.supabaseUrl && cfg.supabaseKey),
+    inArtifact: !!(window.claude && typeof window.claude.use === 'function'),
+    providers: Array.isArray(cfg.providers) ? cfg.providers : [],
+    user: null,
+    status: 'signed-out', // signed-out | loading | saving | saved | offline | error
+    lastSavedAt: null,
+    message: '',
+  };
+  A.available = A.configured && !A.inArtifact;
+
+  let client = null, hooks = null, channel = null;
+  let timer = null, retry = null, busy = false, changeSeq = 0, applying = false;
+  let meta = U.store.get(META_KEY) || {};
+  const saveMeta = () => U.store.set(META_KEY, meta);
+
+  const listeners = [];
+  A.onChange = (fn) => listeners.push(fn);
+  const set = (patch) => { Object.assign(A, patch); listeners.forEach((fn) => { try { fn(A); } catch (e) { console.error(e); } }); };
+
+  function loadLibrary() {
+    if (window.supabase && window.supabase.createClient) return Promise.resolve(window.supabase);
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = LIB;
+      s.onload = () => resolve(window.supabase);
+      s.onerror = () => reject(new Error('library'));
+      document.head.appendChild(s);
+    });
+  }
+
+  A.init = async (h) => {
+    hooks = h;
+    if (!A.available) return;
+    set({ status: 'loading' });
+    try {
+      const lib = await loadLibrary();
+      client = lib.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
+        auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+      });
+    } catch (e) {
+      set({ status: 'error', message: 'Couldn’t load sign-in. Check your connection and reload the page.' });
+      return;
+    }
+    // Supabase advises against awaiting other Supabase calls inside this callback.
+    client.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); });
+    await client.auth.getSession(); // finishes a sign-in redirect if there is one
+    const params = new URLSearchParams(location.search);
+    if (params.has('code') || params.has('error')) {
+      const err = params.get('error_description');
+      history.replaceState(null, '', location.pathname + location.hash);
+      if (err) set({ status: 'signed-out', message: err });
+    }
+    window.addEventListener('online', () => { if (A.user) (meta.dirty ? push() : pull()); });
+    window.addEventListener('focus', () => { if (A.user && !meta.dirty) pull(); });
+  };
+
+  async function onAuth(session) {
+    const user = session && session.user;
+    if (!user) {
+      stop();
+      if (A.user) set({ user: null, status: 'signed-out', lastSavedAt: null });
+      else if (A.status === 'loading') set({ status: 'signed-out' });
+      return;
+    }
+    if (A.user && A.user.id === user.id) return;
+    const provider = (user.app_metadata && user.app_metadata.provider) || 'email';
+    A.user = { id: user.id, email: user.email || '', provider };
+    await connect();
+  }
+
+  // First contact after sign-in: decide whether this browser or the account has the data to keep.
+  async function connect() {
+    set({ status: 'loading', message: '' });
+    const uid = A.user.id;
+    if (meta.userId !== uid) { meta = { userId: uid, version: null, dirty: false }; saveMeta(); }
+    const { data: row, error } = await client.from(TABLE).select('data, version, updated_at').eq('user_id', uid).maybeSingle();
+    if (error) return failed(error);
+    const local = hooks.getState();
+    if (!row) {
+      meta.version = null;
+      if (!hooks.isEmpty(local)) { meta.dirty = true; saveMeta(); await push(); } else set({ status: 'saved' });
+    } else if (meta.version === row.version) {
+      if (meta.dirty) await push(); else set({ status: 'saved', lastSavedAt: row.updated_at });
+    } else if ((meta.version != null && !meta.dirty) || hooks.isEmpty(local)) {
+      adopt(row);
+    } else {
+      const choice = await hooks.chooseSource(row.data, local);
+      if (choice === 'account') { hooks.backup(local); adopt(row); } else { meta.version = row.version; meta.dirty = true; saveMeta(); await push(); }
+    }
+    listen();
+  }
+
+  function adopt(row, note) {
+    applying = true;
+    try { hooks.replaceState(row.data, note); } finally { applying = false; }
+    meta.version = row.version; meta.dirty = false; saveMeta();
+    set({ status: 'saved', lastSavedAt: row.updated_at, message: '' });
+  }
+
+  // Called by the app after every local save.
+  A.changed = () => {
+    if (!A.user || applying || !client) return;
+    changeSeq++;
+    meta.dirty = true; saveMeta();
+    clearTimeout(timer);
+    timer = setTimeout(push, 1200);
+    if (A.status !== 'saving') set({ status: 'saving' });
+  };
+
+  async function push() {
+    if (!client || !A.user) return;
+    if (busy) { clearTimeout(timer); timer = setTimeout(push, 400); return; }
+    busy = true; clearTimeout(timer); clearTimeout(retry);
+    const seq = changeSeq;
+    const uid = A.user.id;
+    const now = new Date().toISOString();
+    set({ status: 'saving' });
+    try {
+      let saved = null;
+      if (meta.version == null) {
+        const res = await client.from(TABLE).insert({ user_id: uid, data: hooks.getState(), version: 1, updated_at: now }).select('version, updated_at').single();
+        if (res.error && res.error.code === '23505') { busy = false; return conflict(); } // another device created it first
+        if (res.error) throw res.error;
+        saved = res.data;
+      } else {
+        const res = await client.from(TABLE).update({ data: hooks.getState(), version: meta.version + 1, updated_at: now })
+          .eq('user_id', uid).eq('version', meta.version).select('version, updated_at');
+        if (res.error) throw res.error;
+        if (!res.data || !res.data.length) { busy = false; return conflict(); } // another device saved first
+        saved = res.data[0];
+      }
+      meta.version = saved.version;
+      meta.dirty = changeSeq !== seq;
+      saveMeta();
+      set({ status: meta.dirty ? 'saving' : 'saved', lastSavedAt: saved.updated_at, message: '' });
+      busy = false;
+      if (meta.dirty) push();
+    } catch (e) {
+      busy = false;
+      failed(e);
+    }
+  }
+
+  async function conflict() {
+    const { data: row, error } = await client.from(TABLE).select('data, version, updated_at').eq('user_id', A.user.id).maybeSingle();
+    if (error || !row) return failed(error || new Error('missing row'));
+    const mine = JSON.parse(JSON.stringify(hooks.getState()));
+    adopt(row);
+    hooks.notify('Another device saved first, so this browser now shows those changes. Your last change here wasn’t saved.', {
+      label: 'Keep mine', run: () => { meta.version = row.version; saveMeta(); hooks.replaceState(mine, null, true); },
+    });
+  }
+
+  async function pull() {
+    if (!client || !A.user || busy) return;
+    const { data: row, error } = await client.from(TABLE).select('data, version, updated_at').eq('user_id', A.user.id).maybeSingle();
+    if (error) return failed(error);
+    if (row && row.version !== meta.version && !meta.dirty) adopt(row, 'Updated with changes from another device.');
+  }
+
+  function listen() {
+    if (channel) client.removeChannel(channel);
+    channel = client.channel('user-data-' + A.user.id)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLE, filter: 'user_id=eq.' + A.user.id }, (payload) => {
+        const row = payload.new;
+        if (!row || !row.version || row.version === meta.version || meta.dirty || busy) return;
+        adopt(row, 'Updated with changes from another device.');
+      })
+      .subscribe();
+  }
+
+  function stop() {
+    clearTimeout(timer); clearTimeout(retry);
+    if (channel && client) client.removeChannel(channel);
+    channel = null;
+  }
+
+  function failed(e) {
+    const msg = String((e && (e.message || e.code)) || e || '');
+    if (!navigator.onLine || /fetch|network|load failed/i.test(msg)) {
+      set({ status: 'offline', message: '' });
+      clearTimeout(retry);
+      retry = setTimeout(() => { if (A.user) (meta.dirty ? push() : pull()); }, 30000);
+      return;
+    }
+    let message = 'Couldn’t save to your account. Your changes are still in this browser.';
+    if (e && (e.code === '42P01' || e.code === 'PGRST205')) message = 'The database table is missing. Run supabase/schema.sql in your Supabase project.';
+    console.error('Keepclear sync:', e);
+    set({ status: 'error', message });
+  }
+
+  // ---------- sign-in actions ----------
+  const redirectTo = () => location.origin + location.pathname;
+  A.signInWith = async (provider) => {
+    const { error } = await client.auth.signInWithOAuth({ provider, options: { redirectTo: redirectTo() } });
+    if (error) throw error;
+  };
+  A.sendLink = async (email) => {
+    const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo(), shouldCreateUser: true } });
+    if (error) throw error;
+  };
+  A.signOut = async () => {
+    if (meta.dirty) { try { await push(); } catch (e) { /* keep signing out */ } }
+    stop();
+    await client.auth.signOut();
+    meta = {}; U.store.del(META_KEY);
+    A.user = null;
+    set({ status: 'signed-out', lastSavedAt: null, message: '' });
+  };
+  A.deleteAccount = async () => {
+    const { error } = await client.rpc('delete_my_account');
+    if (error) throw error;
+    stop();
+    meta = {}; U.store.del(META_KEY);
+    await client.auth.signOut().catch(() => {});
+    A.user = null;
+    set({ status: 'signed-out', lastSavedAt: null, message: '' });
+  };
+  A.hasUnsaved = () => !!(A.user && meta.dirty);
+
+  window.Account = A;
+})();
+
 /* Screen renderers. Each returns an HTML string built from App.state and App.sim. */
 (function () {
   const V = {};
@@ -2115,6 +2377,19 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     let html = head('Settings');
     html += '<div class="settings">';
 
+    if (Account.available) {
+      html += '<section class="group" id="account"><h2>Account</h2>';
+      if (!Account.user) {
+        html += '<p class="small muted">Sign in to save your plan and use it on any device.</p><div class="row"><button class="btn btn-primary btn-sm" data-action="sign-in">Sign in</button></div>';
+      } else {
+        const via = { google: 'Google', apple: 'Apple', email: 'email link' }[Account.user.provider] || Account.user.provider;
+        html += '<div class="line"><span>' + esc(Account.user.email) + '</span><span class="faint small">Signed in with ' + esc(via) + '</span></div>';
+        html += '<p class="small ' + (Account.status === 'error' ? 'urgent' : 'muted') + '">' + esc(App.syncStatusText()) + (Account.message ? '. ' + esc(Account.message) : '') + '</p>';
+        html += '<div class="row"><button class="btn btn-sm" data-action="sign-out">Sign out</button><button class="btn btn-quiet btn-sm btn-danger" data-action="delete-account">Delete account</button></div>';
+      }
+      html += '</section>';
+    }
+
     html += '<section class="group"><h2>Sleep</h2><div class="two">';
     html += '<label class="field" for="setWake"><span>Wake up</span><input class="input" type="time" id="setWake" data-set="wake" value="' + U.toInput(s.wake) + '"></label>';
     html += '<label class="field" for="setBed"><span>Bedtime</span><input class="input" type="time" id="setBed" data-set="bed" value="' + U.toInput(s.bed) + '"></label></div></section>';
@@ -2140,7 +2415,9 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
 
     html += '<section class="group"><h2>Clock</h2><div class="radio-row"><label><input type="radio" name="clockMode" value="real" data-set="clockMode"' + (s.clockMode === 'real' ? ' checked' : '') + '> Real time</label><label><input type="radio" name="clockMode" value="demo" data-set="clockMode"' + (s.clockMode === 'demo' ? ' checked' : '') + '> Test clock</label></div></section>';
 
-    html += '<section class="group"><h2>Data</h2><p class="faint small">Saved in this browser. ' + (AI.mode === 'claude' ? 'Claude reads what you type and upload.' : 'Typing is read by the built-in parser.') + '</p><div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button></div></section>';
+    const backup = U.store.get('keepclear.backup.v1');
+    html += '<section class="group"><h2>Data</h2><p class="faint small">' + (Account.user ? 'Saved to your account and this browser. ' : 'Saved in this browser. ') + (AI.mode === 'claude' ? 'Claude reads what you type and upload.' : 'Typing is read by the built-in parser.') + '</p>' +
+      '<div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button>' + (backup ? '<button class="btn btn-quiet btn-sm" data-action="restore-backup">Restore earlier browser data</button>' : '') + '</div></section>';
     return html + '</div>';
   };
 
@@ -2171,7 +2448,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
   const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---------------- state ----------------
-  function save() { Data.save(App.state); }
+  function save() { Data.save(App.state); Account.changed(); }
   function recompute() {
     E.materializeSeries();
     App.sim = E.simulate();
@@ -2191,11 +2468,83 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       '<div class="rail-actions"><button class="rail-btn" data-action="quick-add"><span>New</span>' + V.kbd('C') + '</button>' +
       '<button class="rail-btn" data-action="command"><span>Search</span>' + V.kbd(V.mod + 'K') + '</button></div>' +
       '<nav class="nav" aria-label="Main">' + NAV.map(([r, l]) => '<a href="#' + r + '" data-route="' + r + '"><span>' + l + '</span><span class="count" data-count="' + r + '"></span></a>').join('') + '</nav>' +
-      '<button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button>';
+      '<div class="rail-foot"><div id="railAccount"></div><button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button></div>';
+    renderAccount();
     $('#tabbar').innerHTML =
       '<a href="#today" data-route="today">Today</a><a href="#calendar" data-route="calendar">Calendar</a>' +
       '<button type="button" class="tab-new" data-action="quick-add" aria-label="New task or event">New</button>' +
       '<a href="#tasks" data-route="tasks">Tasks</a><button type="button" data-action="more-menu" data-route="more">More</button>';
+  }
+
+  // ---------------- account ----------------
+  const PROVIDER_NAMES = { google: 'Google', apple: 'Apple', email: 'email' };
+  function syncStatusText() {
+    const A = Account;
+    if (A.status === 'saving' || A.status === 'loading') return 'Saving…';
+    if (A.status === 'offline') return 'Offline. Changes save when you reconnect.';
+    if (A.status === 'error') return 'Couldn’t save';
+    if (A.lastSavedAt) {
+      const d = new Date(A.lastSavedAt);
+      const sameDay = U.key(d) === U.todayKey();
+      return 'Saved ' + (sameDay ? clock(d.getHours() * 60 + d.getMinutes()) : U.fmtDate(U.key(d)));
+    }
+    return 'Saved';
+  }
+  function renderAccount() {
+    const el = $('#railAccount');
+    if (!el) return;
+    if (!Account.available) { el.innerHTML = ''; return; }
+    if (!Account.user) {
+      el.innerHTML = '<button class="rail-account" data-action="sign-in"><span class="acct-main">Sign in</span><span class="acct-sub">Save your plan to an account</span></button>';
+      return;
+    }
+    const email = Account.user.email || 'Signed in';
+    el.innerHTML = '<a class="rail-account" href="#settings" title="' + esc(email) + '"><span class="avatar" aria-hidden="true">' + esc(email.charAt(0).toUpperCase()) + '</span><span class="acct-text"><span class="acct-main">' + esc(email) + '</span><span class="acct-sub acct-' + Account.status + '">' + syncStatusText() + '</span></span></a>';
+  }
+  App.syncStatusText = syncStatusText;
+
+  function openSignIn() {
+    const p = Account.providers;
+    let body = dlgHead('Sign in to Keepclear', 'Your plan saves to your account, so it’s on every device you use.');
+    body += '<div class="signin">';
+    if (p.includes('google')) body += '<button class="btn signin-btn" data-action="oauth" data-provider="google">Continue with Google</button>';
+    if (p.includes('apple')) body += '<button class="btn signin-btn" data-action="oauth" data-provider="apple">Continue with Apple</button>';
+    if (p.includes('google') || p.includes('apple')) body += '<p class="signin-or"><span>or</span></p>';
+    body += '<form data-form="email-link" class="signin-email"><label class="field" for="signinEmail"><span>Email</span><input class="input" id="signinEmail" type="email" autocomplete="email" required placeholder="you@example.com"></label>' +
+      '<button class="btn btn-primary" type="submit">Email me a sign-in link</button></form>';
+    body += '<p class="form-error" id="signinError" role="alert" hidden></p></div>';
+    if (Account.message) body += '<p class="small faint">' + esc(Account.message) + '</p>';
+    openDialog(body, () => {});
+  }
+  const signInError = (msg) => { const e = $('#signinError'); if (e) { e.textContent = msg; e.hidden = false; } else toast(esc(msg)); };
+
+  // Asks which copy to keep when both this browser and the account already have data.
+  function chooseSource(remote, local) {
+    const count = (s) => {
+      const tasks = (s.tasks || []).filter((t) => !t.done && !t.dropped).length;
+      const events = (s.events || []).length;
+      return tasks + ' task' + (tasks === 1 ? '' : 's') + ', ' + events + ' event' + (events === 1 ? '' : 's');
+    };
+    return new Promise((resolve) => {
+      let answered = false;
+      const done = (choice) => { if (answered) return; answered = true; closeDialog(); resolve(choice); };
+      openDialog(dlgHead('Which plan should Keepclear keep?', 'Your account and this browser both have data.') +
+        '<div class="choice"><button class="btn choice-btn" data-dlg="account"><b>Use my account’s plan</b><span>' + count(remote) + '. Replaces what’s in this browser.</span></button>' +
+        '<button class="btn choice-btn" data-dlg="device"><b>Use this browser’s plan</b><span>' + count(local) + '. Replaces what’s saved in your account.</span></button></div>' +
+        '<p class="small faint">Either way, Keepclear keeps a backup of this browser’s data in Settings.</p>',
+        (act) => { if (act === 'account' || act === 'device') done(act); });
+      dlg().addEventListener('close', () => done('account'), { once: true });
+    });
+  }
+
+  function replaceState(data, note, pushAfter) {
+    App.state = Data.normalize(JSON.parse(JSON.stringify(data)));
+    E.bind(App.state);
+    App.ui.dump = null; App.ui.upload = null;
+    recompute();
+    if (pushAfter) save(); else Data.save(App.state);
+    render();
+    if (note) toast(esc(note));
   }
 
   function render(opts = {}) {
@@ -2861,7 +3210,8 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     'more-menu': () => {
       openDialog(dlgHead('More') + '<nav class="nav" aria-label="More">' +
         [['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
-        '</nav><button class="btn" data-action="command">Search</button>', () => {});
+        '</nav><div class="row"><button class="btn" data-action="command">Search</button>' +
+        (Account.available ? (Account.user ? '<a class="btn btn-quiet" href="#settings" data-dlg="close">' + esc(Account.user.email) + '</a>' : '<button class="btn btn-primary" data-action="sign-in">Sign in</button>') : '') + '</div>', () => {});
     },
     reflow,
     block: (el) => blockDialog(el.dataset.key, el.dataset.date),
@@ -3006,8 +3356,43 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       commit();
     },
     'recap-week': (el) => { App.ui.recapIdx = Number(el.dataset.i); render(); },
+    'sign-in': () => openSignIn(),
+    oauth: async (el) => {
+      el.disabled = true;
+      try { await Account.signInWith(el.dataset.provider); } catch (e) { el.disabled = false; signInError('Couldn’t start ' + PROVIDER_NAMES[el.dataset.provider] + ' sign-in. ' + (e.message || '')); }
+    },
+    'sign-out': () => {
+      openDialog(dlgHead('Sign out?', 'Your plan stays saved in your account. It’s removed from this browser so the next person can’t see it.') +
+        '<div class="dlg-actions"><button class="btn btn-primary" data-dlg="ok">Sign out</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', async (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        try { await Account.signOut(); } catch (e) { toast('Couldn’t sign out. Check your connection.'); return; }
+        App.state = Data.clear(); E.bind(App.state); recompute(); Data.save(App.state); render();
+        toast('Signed out.');
+      });
+    },
+    'delete-account': () => {
+      openDialog(dlgHead('Delete your account?', 'This permanently deletes your Keepclear account and everything saved in it. This can’t be undone.') +
+        '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Delete account</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', async (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        try { await Account.deleteAccount(); } catch (e) { toast('Couldn’t delete the account. ' + esc(e.message || 'Try again.')); return; }
+        App.state = Data.clear(); E.bind(App.state); recompute(); Data.save(App.state); render();
+        toast('Your account and its data were deleted.');
+      });
+    },
+    'restore-backup': () => {
+      const b = U.store.get('keepclear.backup.v1');
+      if (!b) return;
+      openDialog(dlgHead('Restore your earlier browser data?', 'From ' + esc(new Date(b.at).toLocaleString()) + '. This replaces your current plan' + (Account.user ? ' here and in your account' : '') + '.') +
+        '<div class="dlg-actions"><button class="btn btn-primary" data-dlg="ok">Restore</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        replaceState(b.data, 'Restored your earlier data.', true);
+      });
+    },
     reset: () => {
-      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history ' + (Account.user ? 'in this browser and your account' : 'in this browser') + ' will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
         if (act !== 'ok') return;
         App.state = Data.clear();
         E.bind(App.state);
@@ -3169,6 +3554,21 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
         else { const fresh = document.getElementById(input.id); if (fresh) { fresh.value = ''; updateSmart(fresh); fresh.focus(); } }
         return;
       }
+      if (kind === 'email-link') {
+        const input = $('#signinEmail');
+        const email = input.value.trim();
+        if (!email || !input.checkValidity()) { signInError('Enter a valid email address.'); input.focus(); return; }
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          await Account.sendLink(email);
+          $('.signin').innerHTML = '<p><b>Check your inbox.</b> We sent a sign-in link to ' + esc(email) + '. Open it on this device to finish signing in.</p><div class="dlg-actions"><button class="btn" data-dlg="close">Done</button></div>';
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Email me a sign-in link';
+          signInError(/rate/i.test(e.message || '') ? 'Too many links sent. Wait a minute and try again.' : 'Couldn’t send the link. ' + (e.message || ''));
+        }
+        return;
+      }
       if (kind === 'habit') {
         const text = $('#habitText').value.trim();
         if (!text) return;
@@ -3213,6 +3613,16 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     save();
     renderShell();
     wire();
+    Account.onChange(() => { renderAccount(); if (App.route === 'settings' && !dlg().open) render(); });
+    Account.init({
+      getState: () => App.state,
+      isEmpty: (s) => !((s.events || []).length || (s.tasks || []).length || (s.series || []).length || (s.habits || []).length || (s.ideas || []).length || (s.history || []).length),
+      chooseSource,
+      replaceState,
+      backup: (data) => U.store.set('keepclear.backup.v1', { at: Date.now(), data: JSON.parse(JSON.stringify(data)) }),
+      notify: (msg, action) => toast(esc(msg), action),
+    });
+    window.addEventListener('beforeunload', (e) => { if (Account.hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
     const initial = location.hash.slice(1);
     App.route = ROUTES.includes(initial) ? initial : 'today';
     render();

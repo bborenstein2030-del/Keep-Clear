@@ -20,10 +20,13 @@ Then open http://localhost:4178. There are no dependencies and no build step bey
 | `src/js/engine.js` | Scheduler: travel and buffers, protected free time, splitting tasks across days, energy-aware placement, reflow, forecast, overcommitment |
 | `src/js/ai.js` | Reads language and files: event sentences, brain dumps, estimates, syllabus dates, .ics calendar exports. Uses Claude when the page runs as an artifact with the `sample` capability, and a built-in parser otherwise |
 | `src/js/data.js` | Empty starting state and saving to localStorage |
+| `src/js/account.js` | Optional sign-in (email, Google, Apple) and cloud save through Supabase |
+| `src/js/config.js` | Supabase project URL and publishable key; leave empty to run without accounts |
+| `supabase/schema.sql` | Database table and privacy rules for accounts |
 | `src/js/views.js` | Screen renderers |
 | `src/js/app.js` | Routing, actions, dialogs, timers |
 
-The app starts empty. Everything you add is saved in the browser's localStorage. Settings > Clear all data starts over.
+The app starts empty. Everything you add is saved in the browser's localStorage, and also to your account once accounts are set up (see [SETUP-ACCOUNTS.md](SETUP-ACCOUNTS.md)). Settings > Clear all data starts over.
 
 ## Keyboard
 

@@ -380,6 +380,19 @@
     let html = head('Settings');
     html += '<div class="settings">';
 
+    if (Account.available) {
+      html += '<section class="group" id="account"><h2>Account</h2>';
+      if (!Account.user) {
+        html += '<p class="small muted">Sign in to save your plan and use it on any device.</p><div class="row"><button class="btn btn-primary btn-sm" data-action="sign-in">Sign in</button></div>';
+      } else {
+        const via = { google: 'Google', apple: 'Apple', email: 'email link' }[Account.user.provider] || Account.user.provider;
+        html += '<div class="line"><span>' + esc(Account.user.email) + '</span><span class="faint small">Signed in with ' + esc(via) + '</span></div>';
+        html += '<p class="small ' + (Account.status === 'error' ? 'urgent' : 'muted') + '">' + esc(App.syncStatusText()) + (Account.message ? '. ' + esc(Account.message) : '') + '</p>';
+        html += '<div class="row"><button class="btn btn-sm" data-action="sign-out">Sign out</button><button class="btn btn-quiet btn-sm btn-danger" data-action="delete-account">Delete account</button></div>';
+      }
+      html += '</section>';
+    }
+
     html += '<section class="group"><h2>Sleep</h2><div class="two">';
     html += '<label class="field" for="setWake"><span>Wake up</span><input class="input" type="time" id="setWake" data-set="wake" value="' + U.toInput(s.wake) + '"></label>';
     html += '<label class="field" for="setBed"><span>Bedtime</span><input class="input" type="time" id="setBed" data-set="bed" value="' + U.toInput(s.bed) + '"></label></div></section>';
@@ -405,7 +418,9 @@
 
     html += '<section class="group"><h2>Clock</h2><div class="radio-row"><label><input type="radio" name="clockMode" value="real" data-set="clockMode"' + (s.clockMode === 'real' ? ' checked' : '') + '> Real time</label><label><input type="radio" name="clockMode" value="demo" data-set="clockMode"' + (s.clockMode === 'demo' ? ' checked' : '') + '> Test clock</label></div></section>';
 
-    html += '<section class="group"><h2>Data</h2><p class="faint small">Saved in this browser. ' + (AI.mode === 'claude' ? 'Claude reads what you type and upload.' : 'Typing is read by the built-in parser.') + '</p><div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button></div></section>';
+    const backup = U.store.get('keepclear.backup.v1');
+    html += '<section class="group"><h2>Data</h2><p class="faint small">' + (Account.user ? 'Saved to your account and this browser. ' : 'Saved in this browser. ') + (AI.mode === 'claude' ? 'Claude reads what you type and upload.' : 'Typing is read by the built-in parser.') + '</p>' +
+      '<div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button>' + (backup ? '<button class="btn btn-quiet btn-sm" data-action="restore-backup">Restore earlier browser data</button>' : '') + '</div></section>';
     return html + '</div>';
   };
 

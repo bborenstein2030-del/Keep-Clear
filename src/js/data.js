@@ -24,22 +24,25 @@
     };
   }
 
+  // Fills in anything older saves are missing. Used for this browser's data and for data from an account.
+  function normalize(saved) {
+    if (!saved || saved.version !== 2) return empty();
+    const base = empty();
+    const T = U.todayKey();
+    for (const key of Object.keys(base)) if (saved[key] == null) saved[key] = base[key];
+    saved.settings = { ...base.settings, ...saved.settings };
+    for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
+    delete saved.friends; // Friends feature removed until sign-in exists
+    return saved;
+  }
+
   function load() {
     OLD_KEYS.forEach((k) => U.store.del(k));
-    const saved = U.store.get(STORE_KEY);
-    if (saved && saved.version === 2) {
-      const T = U.todayKey();
-      if (saved.plans) for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
-      saved.log = saved.log || {};
-      saved.series = saved.series || [];
-      delete saved.friends; // Friends feature removed until sign-in exists
-      return saved;
-    }
-    return empty();
+    return normalize(U.store.get(STORE_KEY));
   }
 
   window.Data = {
-    empty, load,
+    empty, load, normalize,
     save(state) { U.store.set(STORE_KEY, state); },
     clear() { U.store.del(STORE_KEY); return empty(); },
     INTERESTS: ['guitar', 'running', 'cooking', 'friends', 'drawing', 'podcasts', 'reading', 'basketball', 'gaming', 'photography', 'baking', 'yoga'],

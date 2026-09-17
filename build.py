@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 SRC = ROOT / "src"
 DIST = ROOT / "dist"
-SCRIPTS = ["util.js", "data.js", "engine.js", "ai.js", "views.js", "app.js"]
+SCRIPTS = ["util.js", "config.js", "data.js", "engine.js", "ai.js", "account.js", "views.js", "app.js"]
 
 
 def build():

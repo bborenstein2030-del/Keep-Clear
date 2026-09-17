@@ -105,7 +105,24 @@ kbd {
 .nav a:hover { color: var(--ink); background: var(--sunk); }
 .nav a[aria-current="page"] { background: var(--sunk); color: var(--ink); font-weight: 600; }
 .count { font-family: var(--f-mono); font-size: 12px; color: var(--ink-3); font-weight: 400; }
-.rail-help { margin-top: auto; background: none; border: 0; padding: var(--s1) var(--s2); text-align: left; font-size: 12.5px; color: var(--ink-3); display: flex; gap: var(--s2); align-items: center; }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--s2); }
+.rail-account { display: flex; align-items: center; gap: 10px; width: 100%; padding: var(--s2); border-radius: var(--r-md); border: 1px solid var(--rule); background: var(--card); text-align: left; text-decoration: none; color: var(--ink); }
+button.rail-account { flex-direction: column; align-items: flex-start; gap: 0; }
+.rail-account:hover { border-color: var(--rule-2); }
+.rail-account .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--pine); color: var(--on-pine); display: grid; place-items: center; font-size: 12px; font-weight: 600; flex: none; }
+.rail-account .acct-text { display: flex; flex-direction: column; min-width: 0; }
+.acct-main { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.acct-sub { font-size: 12px; color: var(--ink-3); }
+.acct-error { color: var(--alarm); }
+.signin { display: flex; flex-direction: column; gap: var(--s2); }
+.signin-btn { width: 100%; padding: 9px var(--s3); }
+.signin-or { display: flex; align-items: center; gap: var(--s3); color: var(--ink-3); font-size: 12.5px; margin: var(--s1) 0; }
+.signin-or::before, .signin-or::after { content: ""; flex: 1; border-top: 1px solid var(--rule); }
+.signin-email { display: flex; flex-direction: column; gap: var(--s2); }
+.choice { display: flex; flex-direction: column; gap: var(--s2); }
+.choice-btn { flex-direction: column; align-items: flex-start; gap: 2px; padding: var(--s3); white-space: normal; text-align: left; }
+.choice-btn span { font-size: 13px; color: var(--ink-3); font-weight: 400; }
+.rail-help { background: none; border: 0; padding: var(--s1) var(--s2); text-align: left; font-size: 12.5px; color: var(--ink-3); display: flex; gap: var(--s2); align-items: center; }
 .rail-help:hover { color: var(--ink); }
 
 .main { min-width: 0; width: 100%; max-width: 1060px; padding: var(--s8) var(--s10) 96px; }

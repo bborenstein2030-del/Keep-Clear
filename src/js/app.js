@@ -22,7 +22,7 @@
   const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // ---------------- state ----------------
-  function save() { Data.save(App.state); }
+  function save() { Data.save(App.state); Account.changed(); }
   function recompute() {
     E.materializeSeries();
     App.sim = E.simulate();
@@ -42,11 +42,83 @@
       '<div class="rail-actions"><button class="rail-btn" data-action="quick-add"><span>New</span>' + V.kbd('C') + '</button>' +
       '<button class="rail-btn" data-action="command"><span>Search</span>' + V.kbd(V.mod + 'K') + '</button></div>' +
       '<nav class="nav" aria-label="Main">' + NAV.map(([r, l]) => '<a href="#' + r + '" data-route="' + r + '"><span>' + l + '</span><span class="count" data-count="' + r + '"></span></a>').join('') + '</nav>' +
-      '<button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button>';
+      '<div class="rail-foot"><div id="railAccount"></div><button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button></div>';
+    renderAccount();
     $('#tabbar').innerHTML =
       '<a href="#today" data-route="today">Today</a><a href="#calendar" data-route="calendar">Calendar</a>' +
       '<button type="button" class="tab-new" data-action="quick-add" aria-label="New task or event">New</button>' +
       '<a href="#tasks" data-route="tasks">Tasks</a><button type="button" data-action="more-menu" data-route="more">More</button>';
+  }
+
+  // ---------------- account ----------------
+  const PROVIDER_NAMES = { google: 'Google', apple: 'Apple', email: 'email' };
+  function syncStatusText() {
+    const A = Account;
+    if (A.status === 'saving' || A.status === 'loading') return 'Saving…';
+    if (A.status === 'offline') return 'Offline. Changes save when you reconnect.';
+    if (A.status === 'error') return 'Couldn’t save';
+    if (A.lastSavedAt) {
+      const d = new Date(A.lastSavedAt);
+      const sameDay = U.key(d) === U.todayKey();
+      return 'Saved ' + (sameDay ? clock(d.getHours() * 60 + d.getMinutes()) : U.fmtDate(U.key(d)));
+    }
+    return 'Saved';
+  }
+  function renderAccount() {
+    const el = $('#railAccount');
+    if (!el) return;
+    if (!Account.available) { el.innerHTML = ''; return; }
+    if (!Account.user) {
+      el.innerHTML = '<button class="rail-account" data-action="sign-in"><span class="acct-main">Sign in</span><span class="acct-sub">Save your plan to an account</span></button>';
+      return;
+    }
+    const email = Account.user.email || 'Signed in';
+    el.innerHTML = '<a class="rail-account" href="#settings" title="' + esc(email) + '"><span class="avatar" aria-hidden="true">' + esc(email.charAt(0).toUpperCase()) + '</span><span class="acct-text"><span class="acct-main">' + esc(email) + '</span><span class="acct-sub acct-' + Account.status + '">' + syncStatusText() + '</span></span></a>';
+  }
+  App.syncStatusText = syncStatusText;
+
+  function openSignIn() {
+    const p = Account.providers;
+    let body = dlgHead('Sign in to Keepclear', 'Your plan saves to your account, so it’s on every device you use.');
+    body += '<div class="signin">';
+    if (p.includes('google')) body += '<button class="btn signin-btn" data-action="oauth" data-provider="google">Continue with Google</button>';
+    if (p.includes('apple')) body += '<button class="btn signin-btn" data-action="oauth" data-provider="apple">Continue with Apple</button>';
+    if (p.includes('google') || p.includes('apple')) body += '<p class="signin-or"><span>or</span></p>';
+    body += '<form data-form="email-link" class="signin-email"><label class="field" for="signinEmail"><span>Email</span><input class="input" id="signinEmail" type="email" autocomplete="email" required placeholder="you@example.com"></label>' +
+      '<button class="btn btn-primary" type="submit">Email me a sign-in link</button></form>';
+    body += '<p class="form-error" id="signinError" role="alert" hidden></p></div>';
+    if (Account.message) body += '<p class="small faint">' + esc(Account.message) + '</p>';
+    openDialog(body, () => {});
+  }
+  const signInError = (msg) => { const e = $('#signinError'); if (e) { e.textContent = msg; e.hidden = false; } else toast(esc(msg)); };
+
+  // Asks which copy to keep when both this browser and the account already have data.
+  function chooseSource(remote, local) {
+    const count = (s) => {
+      const tasks = (s.tasks || []).filter((t) => !t.done && !t.dropped).length;
+      const events = (s.events || []).length;
+      return tasks + ' task' + (tasks === 1 ? '' : 's') + ', ' + events + ' event' + (events === 1 ? '' : 's');
+    };
+    return new Promise((resolve) => {
+      let answered = false;
+      const done = (choice) => { if (answered) return; answered = true; closeDialog(); resolve(choice); };
+      openDialog(dlgHead('Which plan should Keepclear keep?', 'Your account and this browser both have data.') +
+        '<div class="choice"><button class="btn choice-btn" data-dlg="account"><b>Use my account’s plan</b><span>' + count(remote) + '. Replaces what’s in this browser.</span></button>' +
+        '<button class="btn choice-btn" data-dlg="device"><b>Use this browser’s plan</b><span>' + count(local) + '. Replaces what’s saved in your account.</span></button></div>' +
+        '<p class="small faint">Either way, Keepclear keeps a backup of this browser’s data in Settings.</p>',
+        (act) => { if (act === 'account' || act === 'device') done(act); });
+      dlg().addEventListener('close', () => done('account'), { once: true });
+    });
+  }
+
+  function replaceState(data, note, pushAfter) {
+    App.state = Data.normalize(JSON.parse(JSON.stringify(data)));
+    E.bind(App.state);
+    App.ui.dump = null; App.ui.upload = null;
+    recompute();
+    if (pushAfter) save(); else Data.save(App.state);
+    render();
+    if (note) toast(esc(note));
   }
 
   function render(opts = {}) {
@@ -712,7 +784,8 @@
     'more-menu': () => {
       openDialog(dlgHead('More') + '<nav class="nav" aria-label="More">' +
         [['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
-        '</nav><button class="btn" data-action="command">Search</button>', () => {});
+        '</nav><div class="row"><button class="btn" data-action="command">Search</button>' +
+        (Account.available ? (Account.user ? '<a class="btn btn-quiet" href="#settings" data-dlg="close">' + esc(Account.user.email) + '</a>' : '<button class="btn btn-primary" data-action="sign-in">Sign in</button>') : '') + '</div>', () => {});
     },
     reflow,
     block: (el) => blockDialog(el.dataset.key, el.dataset.date),
@@ -857,8 +930,43 @@
       commit();
     },
     'recap-week': (el) => { App.ui.recapIdx = Number(el.dataset.i); render(); },
+    'sign-in': () => openSignIn(),
+    oauth: async (el) => {
+      el.disabled = true;
+      try { await Account.signInWith(el.dataset.provider); } catch (e) { el.disabled = false; signInError('Couldn’t start ' + PROVIDER_NAMES[el.dataset.provider] + ' sign-in. ' + (e.message || '')); }
+    },
+    'sign-out': () => {
+      openDialog(dlgHead('Sign out?', 'Your plan stays saved in your account. It’s removed from this browser so the next person can’t see it.') +
+        '<div class="dlg-actions"><button class="btn btn-primary" data-dlg="ok">Sign out</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', async (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        try { await Account.signOut(); } catch (e) { toast('Couldn’t sign out. Check your connection.'); return; }
+        App.state = Data.clear(); E.bind(App.state); recompute(); Data.save(App.state); render();
+        toast('Signed out.');
+      });
+    },
+    'delete-account': () => {
+      openDialog(dlgHead('Delete your account?', 'This permanently deletes your Keepclear account and everything saved in it. This can’t be undone.') +
+        '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Delete account</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', async (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        try { await Account.deleteAccount(); } catch (e) { toast('Couldn’t delete the account. ' + esc(e.message || 'Try again.')); return; }
+        App.state = Data.clear(); E.bind(App.state); recompute(); Data.save(App.state); render();
+        toast('Your account and its data were deleted.');
+      });
+    },
+    'restore-backup': () => {
+      const b = U.store.get('keepclear.backup.v1');
+      if (!b) return;
+      openDialog(dlgHead('Restore your earlier browser data?', 'From ' + esc(new Date(b.at).toLocaleString()) + '. This replaces your current plan' + (Account.user ? ' here and in your account' : '') + '.') +
+        '<div class="dlg-actions"><button class="btn btn-primary" data-dlg="ok">Restore</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+        if (act !== 'ok') return;
+        closeDialog();
+        replaceState(b.data, 'Restored your earlier data.', true);
+      });
+    },
     reset: () => {
-      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history ' + (Account.user ? 'in this browser and your account' : 'in this browser') + ' will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
         if (act !== 'ok') return;
         App.state = Data.clear();
         E.bind(App.state);
@@ -1020,6 +1128,21 @@
         else { const fresh = document.getElementById(input.id); if (fresh) { fresh.value = ''; updateSmart(fresh); fresh.focus(); } }
         return;
       }
+      if (kind === 'email-link') {
+        const input = $('#signinEmail');
+        const email = input.value.trim();
+        if (!email || !input.checkValidity()) { signInError('Enter a valid email address.'); input.focus(); return; }
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = 'Sending…';
+        try {
+          await Account.sendLink(email);
+          $('.signin').innerHTML = '<p><b>Check your inbox.</b> We sent a sign-in link to ' + esc(email) + '. Open it on this device to finish signing in.</p><div class="dlg-actions"><button class="btn" data-dlg="close">Done</button></div>';
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'Email me a sign-in link';
+          signInError(/rate/i.test(e.message || '') ? 'Too many links sent. Wait a minute and try again.' : 'Couldn’t send the link. ' + (e.message || ''));
+        }
+        return;
+      }
       if (kind === 'habit') {
         const text = $('#habitText').value.trim();
         if (!text) return;
@@ -1064,6 +1187,16 @@
     save();
     renderShell();
     wire();
+    Account.onChange(() => { renderAccount(); if (App.route === 'settings' && !dlg().open) render(); });
+    Account.init({
+      getState: () => App.state,
+      isEmpty: (s) => !((s.events || []).length || (s.tasks || []).length || (s.series || []).length || (s.habits || []).length || (s.ideas || []).length || (s.history || []).length),
+      chooseSource,
+      replaceState,
+      backup: (data) => U.store.set('keepclear.backup.v1', { at: Date.now(), data: JSON.parse(JSON.stringify(data)) }),
+      notify: (msg, action) => toast(esc(msg), action),
+    });
+    window.addEventListener('beforeunload', (e) => { if (Account.hasUnsaved()) { e.preventDefault(); e.returnValue = ''; } });
     const initial = location.hash.slice(1);
     App.route = ROUTES.includes(initial) ? initial : 'today';
     render();
