@@ -50,6 +50,64 @@
   E.remaining = (t) => Math.max(0, E.estimate(t) - t.spent);
   E.activeTasks = () => S.tasks.filter((t) => !t.done && !t.dropped);
 
+  // ---------- repeating tasks ----------
+  const ORDINAL = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+  E.repeatLabel = (r) => {
+    if (!r) return '';
+    if (r.freq === 'daily') return 'every day';
+    if (r.freq === 'weekdays') return 'every weekday';
+    if (r.freq === 'weekly') return 'every ' + [1, 2, 3, 4, 5, 6, 0].filter((d) => (r.days || []).includes(d)).map((d) => U.DAY_SHORT[d]).join(', ');
+    if (r.freq === 'monthly') return 'monthly on the ' + ORDINAL(r.dayOfMonth);
+    return '';
+  };
+  E.seriesOf = (t) => (t && t.seriesId ? (S.series || []).find((x) => x.id === t.seriesId) : null);
+  E.occursOn = (sr, k) => {
+    if (k < sr.start || (sr.until && k > sr.until) || (sr.skipDates || []).includes(k)) return false;
+    const r = sr.repeat, d = U.parseKey(k), dw = d.getDay();
+    if (r.freq === 'daily') return true;
+    if (r.freq === 'weekdays') return dw >= 1 && dw <= 5;
+    if (r.freq === 'weekly') return (r.days || []).includes(dw);
+    if (r.freq === 'monthly') {
+      const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return d.getDate() === Math.min(r.dayOfMonth, last);
+    }
+    return false;
+  };
+  // Creates occurrences for the planning window. An untouched occurrence that
+  // was missed steps aside once a newer one exists, so daily tasks don't pile up.
+  E.materializeSeries = () => {
+    const T = E.today();
+    (S.series || []).forEach((sr) => {
+      const mine = S.tasks.filter((t) => t.seriesId === sr.id);
+      const have = new Set(mine.map((t) => t.occurrence));
+      for (let i = 0; i < HORIZON; i++) {
+        const k = U.addDays(T, i);
+        if (have.has(k) || !E.occursOn(sr, k)) continue;
+        // Work on an occurrence can start the day after the previous one is due.
+        let prev = null;
+        for (let j = 1; j <= 31 && !prev; j++) { const d = U.addDays(k, -j); if (d < sr.start) break; if (E.occursOn(sr, d) || (sr.skipDates || []).includes(d)) prev = d; }
+        S.tasks.push({
+          id: U.uid('t'), seriesId: sr.id, occurrence: k, deadline: k, availableFrom: prev ? U.addDays(prev, 1) : sr.start, title: sr.title, base: sr.base, manual: !!sr.manual,
+          category: sr.category, heavy: sr.heavy, done: false, dropped: false, spent: 0, priority: 'normal', optional: false,
+          avoidDays: [], postponeUntil: null, timer: null, createdAt: T, aiSource: sr.aiSource || 'local',
+        });
+      }
+      const open = S.tasks.filter((t) => t.seriesId === sr.id && !t.done && !t.dropped).sort((a, b) => a.occurrence.localeCompare(b.occurrence));
+      open.forEach((t, i) => {
+        if (t.occurrence < T && !t.spent && !t.timer && i < open.length - 1) { t.dropped = true; t.missed = true; }
+      });
+    });
+  };
+  // For lists: only the soonest open occurrence of each series is shown.
+  E.nextOccurrenceIds = () => {
+    const first = {};
+    S.tasks.filter((t) => t.seriesId && !t.done && !t.dropped)
+      .sort((a, b) => a.occurrence.localeCompare(b.occurrence))
+      .forEach((t) => { if (!first[t.seriesId]) first[t.seriesId] = t.id; });
+    return new Set(Object.values(first));
+  };
+  E.listed = (t) => !t.seriesId || E.nextOccurrenceIds().has(t.id);
+
   // ---------- fixed commitments ----------
   E.eventsOn = (k) => {
     const dw = U.dow(k);
@@ -110,6 +168,7 @@
       const r = R[t.id] || 0;
       if (r < 5) continue;
       if (t.postponeUntil && k < t.postponeUntil) continue;
+      if (t.availableFrom && k < t.availableFrom) continue;
       if ((t.avoidDays || []).includes(k)) continue;
       let target;
       if (t.deadline) {

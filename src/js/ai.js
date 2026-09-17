@@ -161,6 +161,25 @@
   const titleCase = (s) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase());
   const S = () => window.App.state;
 
+  // ---------- repeat rules: "every day", "every Mon/Wed", "mondays", "monthly" ----------
+  function findRepeat(lower, today) {
+    let m = lower.match(/\b(every ?day|each day|daily)\b/);
+    if (m) return { rule: { freq: 'daily' }, rx: m[0] };
+    m = lower.match(/\b(every weekday|each weekday|weekdays|on weekdays)\b/);
+    if (m) return { rule: { freq: 'weekdays' }, rx: m[0] };
+    m = lower.match(/\b(every|each) month\b|\bmonthly\b/);
+    if (m) return { rule: { freq: 'monthly', dayOfMonth: U.parseKey(today).getDate() }, rx: m[0] };
+    const dayList = '(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)[a-z]*';
+    m = lower.match(new RegExp('\\b(?:every|each)\\s+(' + dayList + '(?:\\s*(?:,|/|&|and)\\s*' + dayList + ')*)'));
+    if (m) { const d = findDays(m[1]); if (d) return { rule: { freq: 'weekly', days: d.days }, rx: m[0] }; }
+    m = lower.match(/\b(?:on\s+)?(mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays)\b/);
+    if (m) { const d = findDays(m[1]); if (d) return { rule: { freq: 'weekly', days: d.days }, rx: m[0] }; }
+    m = lower.match(/\b(every|each) week\b|\bweekly\b/);
+    if (m) return { rule: { freq: 'weekly', days: [U.dow(today)] }, rx: m[0] };
+    return null;
+  }
+  AI.findRepeat = findRepeat;
+
   // ---------- live reading for quick add: what it understood, and where ----------
   AI.inspect = (raw, today, force) => {
     const lower = raw.toLowerCase();
@@ -189,8 +208,10 @@
       out.event = ev;
     } else {
       let deadline = null;
-      const dl = deadlineIn(lower, today);
-      if (dl) { mark(dl.rx); deadline = dl.date; }
+      const repeat = findRepeat(lower, today);
+      const dl = repeat ? null : deadlineIn(lower, today);
+      if (repeat) mark(repeat.rx);
+      else if (dl) { mark(dl.rx); deadline = dl.date; }
       else {
         const d = findDate(lower, today);
         if (d) { const m = lower.match(d.rx); if (m) mark(m[0]); deadline = d.date; }
@@ -204,7 +225,7 @@
       ranges.slice().sort((a, b) => b[0] - a[0]).forEach(([a, b]) => { title = title.slice(0, a) + ' ' + title.slice(b); });
       title = clean(title.replace(PREFIX_RX, '').replace(/\b(by|due|on|before)\s*$/i, ''));
       const est = AI.estimateLocal(title || raw);
-      out.task = { title, deadline, minutes: est.minutes, category: est.category, heavy: est.heavy };
+      out.task = { title, deadline, repeat: repeat ? repeat.rule : null, minutes: est.minutes, category: est.category, heavy: est.heavy };
     }
     ranges.sort((a, b) => a[0] - b[0]);
     const merged = [];

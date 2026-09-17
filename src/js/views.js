@@ -195,10 +195,11 @@
   // ======================= Tasks =======================
   V.tasks = () => {
     const S = st(), X = sim(), ui = App.ui, T = X.today;
-    const active = S.tasks.filter((t) => !t.done && !t.dropped);
+    const nextIds = E.nextOccurrenceIds();
+    const active = S.tasks.filter((t) => !t.done && !t.dropped && (!t.seriesId || nextIds.has(t.id)));
     let html = head('Tasks', '', active.length ? active.length + ' open · ' + dur(active.reduce((a, t) => a + E.remaining(t), 0)) + ' of work' : '');
 
-    html += '<form class="addrow" data-form="smart">' + V.smartInput('taskText', 'task', 'Add a task, like “history essay due Friday”') + '<button class="btn btn-primary" type="submit">Add</button></form>';
+    html += '<form class="addrow" data-form="smart">' + V.smartInput('taskText', 'task', 'Add a task, like “essay due Friday” or “laundry every Sunday”') + '<button class="btn btn-primary" type="submit">Add</button></form>';
 
     html += '<details class="disclose"' + (ui.dump || ui.dumpBusy ? ' open' : '') + '><summary>Brain dump</summary><div class="disclose-body">';
     html += '<label class="sr" for="dumpText">Brain dump</label><textarea class="input" id="dumpText" rows="5" placeholder="Type everything on your mind, one thing per line.">' + esc(ui.dumpDraft) + '</textarea>';
@@ -234,7 +235,7 @@
       if (!list.length) return;
       html += '<section class="group"><h2>' + name + '</h2>' + list.map((t) => taskRow(t, next[t.id], short[t.id], T)).join('') + '</section>';
     });
-    const done = S.tasks.filter((t) => t.done || t.dropped);
+    const done = S.tasks.filter((t) => t.done || (t.dropped && !t.missed));
     if (done.length) html += '<section class="group"><h2>Done</h2>' + done.slice(-5).reverse().map((t) => taskRow(t, null, null, T)).join('') + '</section>';
 
     if (S.ideas.length) {
@@ -251,12 +252,14 @@
     html += '<button class="finish" data-action="finish-task" data-id="' + t.id + '" aria-label="' + (isDone ? 'Mark not done' : 'Mark done') + ': ' + esc(t.title) + '">' + icon('check') + '</button>';
     html += '<div class="body"><div class="title">' + esc(t.title) + '</div><div class="meta">';
     const bits = [];
-    if (isDone) bits.push(t.dropped ? 'Dropped' : 'Took ' + dur(t.spent));
+    if (isDone) bits.push(t.dropped ? (t.seriesId ? 'Skipped' : 'Dropped') : t.spent >= 5 ? 'Took ' + dur(t.spent) : 'Completed');
     else {
       if (t.deadline) {
         const n = U.diffDays(T, t.deadline);
         bits.push('<span class="' + (n <= 1 ? 'urgent' : '') + '">' + (n < 0 ? 'Overdue' : 'Due ' + U.relDay(t.deadline, T)) + '</span>');
       }
+      const sr = E.seriesOf(t);
+      if (sr) bits.push('<span class="repeat">Repeats ' + E.repeatLabel(sr.repeat) + '</span>');
       bits.push(dur(E.remaining(t)) + ' left');
       if (short) bits.push('<span class="urgent">' + dur(short.short) + ' won’t fit in time</span>');
       else if (next) bits.push('Next ' + (next.k === T ? 'today' : U.DAY_SHORT[U.dow(next.k)]) + ' ' + clock(next.b.start, { short: true }));

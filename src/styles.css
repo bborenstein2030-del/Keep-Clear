@@ -279,6 +279,7 @@ button.blk:hover { filter: brightness(0.96); }
 .trow .body { min-width: 0; }
 .trow .meta { font-size: 13px; color: var(--ink-3); margin-top: 1px; }
 .urgent { color: var(--alarm); }
+.repeat { color: var(--ink-2); }
 .trow .actions { display: flex; gap: 2px; align-items: center; opacity: 0; transition: opacity 120ms; }
 .trow:hover .actions, .trow:focus-within .actions, .trow.is-running .actions { opacity: 1; }
 @media (hover: none) { .trow .actions { opacity: 1; } }
@@ -327,8 +328,9 @@ dialog::backdrop { background: rgba(10, 16, 13, 0.28); }
 .dlg dt { color: var(--ink-3); }
 .dlg dd { margin: 0; }
 .dlg .nav a { color: var(--ink); font-size: 15px; padding: 10px var(--s2); }
-.evform { display: flex; flex-direction: column; gap: var(--s3); }
-.evform fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.evform, .taskform { display: flex; flex-direction: column; gap: var(--s3); }
+.dlg fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.taskform .two .field:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .evform .input[aria-invalid="true"] { outline: 2px solid var(--alarm); outline-offset: -1px; }
 .scope { display: flex; gap: var(--s1); background: var(--sunk); border-radius: var(--r-md); padding: 2px; }
 .scope label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px var(--s2); border-radius: var(--r-sm); font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: center; }

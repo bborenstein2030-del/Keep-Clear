@@ -24,6 +24,7 @@
   // ---------------- state ----------------
   function save() { Data.save(App.state); }
   function recompute() {
+    E.materializeSeries();
     App.sim = E.simulate();
     App.state.log[App.sim.today] = E.snapshot(App.sim);
   }
@@ -132,7 +133,7 @@
         : '<b>Event</b> needs a time, like “4–6pm” or “at 7pm”';
     } else {
       const t = r.task;
-      hint.innerHTML = '<b>Task</b> ' + esc(t.title || '…') + ' · ' + (t.deadline ? 'due ' + U.fmtDate(t.deadline) : 'no due date') + ' · about ' + dur(E.estimate({ base: t.minutes, category: t.category }));
+      hint.innerHTML = '<b>Task</b> ' + esc(t.title || '…') + ' · ' + (t.repeat ? E.repeatLabel(t.repeat) : t.deadline ? 'due ' + U.fmtDate(t.deadline) : 'no due date') + ' · about ' + dur(E.estimate({ base: t.minutes, category: t.category }));
     }
     syncSeg(input, r.kind);
   }
@@ -147,6 +148,15 @@
     if (!r) return false;
     if (r.kind === 'task') {
       if (!r.task.title) return false;
+      if (r.task.repeat) {
+        const sr = { id: U.uid('s'), title: r.task.title, base: r.task.minutes, category: r.task.category, heavy: r.task.heavy, repeat: r.task.repeat, start: T(), skipDates: [] };
+        App.state.series.push(sr);
+        commit({ replan: true });
+        toast('Added ' + esc(sr.title) + ', ' + E.repeatLabel(sr.repeat) + '.', {
+          label: 'Undo', run: () => { removeSeries(sr, { keepProgress: false }); commit({ replan: true }); },
+        });
+        return true;
+      }
       const t = newTask({ title: r.task.title, deadline: r.task.deadline, base: r.task.minutes, category: r.task.category, heavy: r.task.heavy });
       commit({ replan: true });
       toast('Added ' + esc(t.title) + (t.deadline ? ', due ' + U.relDay(t.deadline, T()) : '') + ', about ' + dur(E.estimate(t)) + '.', undoRemove('tasks', t));
@@ -211,7 +221,8 @@
     let items = commands.filter((c) => !words.length || hit(c.label));
     if (words.length) {
       const found = [];
-      S.tasks.filter((t) => !t.dropped && hit(t.title)).slice(0, 6).forEach((t) => found.push({
+      const nextIds = E.nextOccurrenceIds();
+      S.tasks.filter((t) => !t.dropped && (!t.seriesId || t.done || nextIds.has(t.id)) && hit(t.title)).slice(0, 6).forEach((t) => found.push({
         label: t.title, group: 'Tasks', sub: t.done ? 'Done' : t.deadline ? 'Due ' + U.relDay(t.deadline, T()) : '',
         run: () => { location.hash = 'tasks'; setTimeout(() => taskMenu(t), 30); },
       }));
@@ -310,6 +321,36 @@
     return t;
   }
 
+  // Stops a series. Finished occurrences stay as history; so does anything already started.
+  function removeSeries(sr, { keepProgress = true, keep = null } = {}) {
+    App.state.series = App.state.series.filter((x) => x !== sr);
+    App.state.tasks = App.state.tasks.filter((x) => {
+      if (x.seriesId !== sr.id) return true;
+      if (x === keep || x.done || (keepProgress && (x.spent || x.timer))) { x.seriesId = null; return true; }
+      return false;
+    });
+  }
+  const WEEK = [1, 2, 3, 4, 5, 6, 0];
+  function repeatFields(rule, fallbackDow) {
+    const freq = rule ? rule.freq : 'none';
+    const days = rule && rule.days ? rule.days : [fallbackDow];
+    const opt = (v, l) => '<option value="' + v + '"' + (freq === v ? ' selected' : '') + '>' + l + '</option>';
+    return '<label class="field" for="editRepeat"><span>Repeats</span><select class="input" id="editRepeat">' +
+      opt('none', 'Doesn’t repeat') + opt('daily', 'Every day') + opt('weekdays', 'Every weekday') + opt('weekly', 'Every week on…') + opt('monthly', 'Every month') + '</select></label>' +
+      '<fieldset class="daypick" id="editRepeatDays"' + (freq === 'weekly' ? '' : ' hidden') + '><legend>On</legend><div>' +
+      WEEK.map((d) => '<label><input type="checkbox" name="repeatDay" value="' + d + '"' + (days.includes(d) ? ' checked' : '') + '><span>' + U.DAY_SHORT[d] + '</span></label>').join('') + '</div></fieldset>';
+  }
+  function readRepeat(anchorDate) {
+    const freq = $('#editRepeat').value;
+    if (freq === 'none') return null;
+    if (freq === 'weekly') {
+      const days = $$('input[name="repeatDay"]:checked').map((c) => Number(c.value));
+      return { freq, days: days.length ? days : [U.dow(anchorDate)] };
+    }
+    if (freq === 'monthly') return { freq, dayOfMonth: U.parseKey(anchorDate).getDate() };
+    return { freq };
+  }
+
   // One click completes. Tracked time teaches the estimator; Undo reverses both.
   function completeTask(t, rowEl) {
     const before = { spent: t.spent, timer: t.timer };
@@ -333,40 +374,96 @@
 
   function taskMenu(t) {
     const isDone = t.done || t.dropped;
-    let body = dlgHead(esc(t.title), isDone ? (t.dropped ? 'Dropped' : 'Completed') : 'Estimate ' + dur(E.estimate(t)) + (t.deadline ? ' · due ' + U.fmtDate(t.deadline) : ''));
+    const sr = E.seriesOf(t);
+    const sub = isDone ? (t.missed ? 'Missed' : t.dropped ? 'Dropped' : 'Completed')
+      : 'Estimate ' + dur(E.estimate(t)) + (sr ? ' · ' + E.repeatLabel(sr.repeat) : '') + (t.deadline ? ' · due ' + U.fmtDate(t.deadline) : '');
+    let body = dlgHead(esc(t.title), sub);
     if (!isDone) {
-      body += '<form data-dlg-form="edit" class="two"><label class="field" for="editDue"><span>Due</span><input class="input" id="editDue" type="date" value="' + (t.deadline || '') + '"></label><label class="field" for="editEst"><span>Time needed (min)</span><input class="input" id="editEst" type="number" min="5" step="5" value="' + E.estimate(t) + '"></label><label class="field" for="editSpent"><span>Time spent so far (min)</span><input class="input" id="editSpent" type="number" min="0" step="5" value="' + t.spent + '"></label></form>';
+      body += '<form data-dlg-form="edit" class="taskform">';
+      body += '<label class="field" for="editTitle"><span>Name</span><input class="input" id="editTitle" value="' + esc(t.title) + '" autocomplete="off"></label>';
+      body += '<div class="two"><label class="field" for="editDue"><span>' + (sr ? 'This one is due' : 'Due') + '</span><input class="input" id="editDue" type="date" value="' + (t.deadline || '') + '"></label>' +
+        '<label class="field" for="editEst"><span>Time needed (min)</span><input class="input" id="editEst" type="number" min="5" step="5" value="' + E.estimate(t) + '"></label>' +
+        '<label class="field" for="editSpent"><span>Time spent so far (min)</span><input class="input" id="editSpent" type="number" min="0" step="5" value="' + t.spent + '"></label></div>';
+      body += repeatFields(sr && sr.repeat, U.dow(t.deadline || T()));
       body += '<label class="row small" for="editHeavy"><input type="checkbox" id="editHeavy"' + (t.heavy ? ' checked' : '') + '> Needs focus, so schedule it in focus hours</label>';
-      body += '<div class="dlg-actions"><button class="btn btn-primary" data-dlg="save">Save</button><button class="btn" data-dlg="postpone">Postpone a week</button><button class="btn" data-dlg="drop">Drop</button><button class="btn btn-quiet btn-danger" data-dlg="delete">Delete</button></div>';
+      if (sr) body += '<p class="small faint">Name, time needed, focus and repeat changes also apply to future repeats.</p>';
+      body += '<div class="dlg-actions"><button class="btn btn-primary" type="submit">Save</button><button class="btn" type="button" data-dlg="postpone">Postpone a week</button><button class="btn" type="button" data-dlg="drop">' + (sr ? 'Skip this one' : 'Drop') + '</button>' +
+        '<button class="btn btn-quiet btn-danger" type="button" data-dlg="delete">' + (sr ? 'Delete all repeats' : 'Delete') + '</button></div></form>';
     } else {
       body += '<div class="dlg-actions"><button class="btn" data-dlg="restore">Move back to open tasks</button><button class="btn btn-quiet btn-danger" data-dlg="delete">Delete</button></div>';
     }
     openDialog(body, (act) => {
+      const tasksBefore = App.state.tasks.slice();
+      const seriesBefore = App.state.series.slice();
       const snapshot = { ...t };
-      const idx = App.state.tasks.indexOf(t);
+      const srSnapshot = sr ? { ...sr, repeat: { ...sr.repeat }, skipDates: (sr.skipDates || []).slice() } : null;
+      let msg = null;
       if (act === 'save') {
+        const title = $('#editTitle').value.trim() || t.title;
         const est = Number($('#editEst').value);
+        t.title = title;
         if (est > 0 && est !== E.estimate(t)) { t.base = est; t.manual = true; }
-        t.deadline = $('#editDue').value || null;
+        t.deadline = $('#editDue').value || (sr ? t.deadline : null);
         t.spent = Math.max(0, Number($('#editSpent').value) || 0);
         t.heavy = $('#editHeavy').checked;
+        const rule = readRepeat(t.deadline || T());
+        if (!rule && sr) {
+          removeSeries(sr, { keep: t });
+          msg = 'Saved. ' + esc(title) + ' no longer repeats.';
+        } else if (rule && sr) {
+          const ruleChanged = JSON.stringify(rule) !== JSON.stringify(sr.repeat);
+          Object.assign(sr, { title, base: t.base, manual: t.manual, heavy: t.heavy, repeat: rule });
+          // Untouched future repeats are regenerated under the new rule; started ones just get the new details.
+          const stale = new Set();
+          App.state.tasks.forEach((x) => {
+            if (x.seriesId !== sr.id || x === t || x.done || x.dropped) return;
+            if (ruleChanged && !x.spent && !x.timer) stale.add(x);
+            else Object.assign(x, { title, base: sr.base, manual: sr.manual, heavy: sr.heavy });
+          });
+          App.state.tasks = App.state.tasks.filter((x) => !stale.has(x));
+          msg = 'Saved. ' + esc(title) + ' repeats ' + E.repeatLabel(rule) + '.';
+        } else if (rule) {
+          const newSr = { id: U.uid('s'), title, base: t.base, manual: t.manual, category: t.category, heavy: t.heavy, repeat: rule, start: T(), skipDates: [] };
+          // Keep a due date the person chose; otherwise use the first day the rule lands on.
+          let start = t.deadline;
+          for (let i = 0; !start && i < 62; i++) { const k = U.addDays(T(), i); if (E.occursOn(newSr, k)) start = k; }
+          start = start || T();
+          newSr.start = start < T() ? start : T();
+          App.state.series.push(newSr);
+          Object.assign(t, { seriesId: newSr.id, occurrence: start, deadline: start });
+          msg = 'Saved. ' + esc(title) + ' now repeats ' + E.repeatLabel(rule) + '.';
+        } else msg = 'Saved.';
       }
-      if (act === 'postpone') t.postponeUntil = U.addDays(T(), 7);
-      if (act === 'drop') t.dropped = true;
-      if (act === 'restore') { t.done = false; t.dropped = false; }
-      if (act === 'delete') App.state.tasks = App.state.tasks.filter((x) => x !== t);
+      if (act === 'postpone') { t.postponeUntil = U.addDays(T(), 7); msg = 'Postponed until ' + U.fmtDate(U.addDays(T(), 7)) + '.'; }
+      if (act === 'drop') { t.dropped = true; msg = (sr ? 'Skipped this ' : 'Dropped ') + esc(t.title) + (sr ? ' (' + U.fmtDate(t.occurrence) + ').' : '.'); }
+      if (act === 'restore') { t.done = false; t.dropped = false; t.missed = false; msg = 'Moved back to open tasks.'; }
+      if (act === 'delete') {
+        if (sr && !isDone) {
+          removeSeries(sr);
+          msg = 'Deleted ' + esc(t.title) + ' and its future repeats.';
+        } else {
+          // Deleting one occurrence: remember the date so it isn't generated again.
+          if (sr && t.occurrence) sr.skipDates = (sr.skipDates || []).concat(t.occurrence);
+          App.state.tasks = App.state.tasks.filter((x) => x !== t);
+          msg = 'Deleted ' + esc(t.title) + (sr ? ' (' + U.fmtDate(t.occurrence) + ')' : '') + '.';
+        }
+      }
+      if (!msg) return;
       closeDialog();
       commit({ replan: true, flip: App.route === 'today' });
-      const msg = { save: 'Saved.', postpone: 'Postponed until ' + U.fmtDate(U.addDays(T(), 7)) + '.', drop: 'Dropped ' + esc(t.title) + '.', restore: 'Moved back to open tasks.', delete: 'Deleted ' + esc(t.title) + '.' }[act];
-      if (!msg) return;
-      toast(msg, act === 'save' ? null : {
+      toast(msg, {
         label: 'Undo', run: () => {
-          if (act === 'delete') App.state.tasks.splice(Math.max(0, idx), 0, t);
+          App.state.tasks = tasksBefore;
+          App.state.series = seriesBefore;
+          Object.keys(t).forEach((k) => { if (!(k in snapshot)) delete t[k]; });
           Object.assign(t, snapshot);
+          if (sr && srSnapshot) { Object.keys(sr).forEach((k) => { if (!(k in srSnapshot)) delete sr[k]; }); Object.assign(sr, srSnapshot); }
           commit({ replan: true });
         },
       });
     });
+    const titleInput = $('#editTitle');
+    if (titleInput) titleInput.focus();
   }
 
   // ---------------- block dialog ----------------
@@ -852,6 +949,7 @@
     document.addEventListener('change', (e) => {
       const el = e.target;
       const S = App.state, s = S.settings;
+      if (el.id === 'editRepeat') { const days = $('#editRepeatDays'); if (days) days.hidden = el.value !== 'weekly'; return; }
       if (el.name === 'evScope') { const days = $('#evDays'); if (days) days.hidden = el.value !== 'all'; return; }
       if (el.id === 'icsFile' && el.files && el.files[0]) {
         el.files[0].text().then((text) => {

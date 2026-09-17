@@ -15,6 +15,7 @@
       },
       events: [],
       tasks: [],
+      series: [], // repeating tasks: the rule lives here, occurrences are generated into tasks
       history: [],
       habits: [],
       ideas: [],
@@ -30,6 +31,7 @@
       const T = U.todayKey();
       if (saved.plans) for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
       saved.log = saved.log || {};
+      saved.series = saved.series || [];
       delete saved.friends; // Friends feature removed until sign-in exists
       return saved;
     }
