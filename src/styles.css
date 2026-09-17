@@ -335,6 +335,22 @@ dialog::backdrop { background: rgba(10, 16, 13, 0.28); }
 .dlg dt { color: var(--ink-3); }
 .dlg dd { margin: 0; }
 .dlg .nav a { color: var(--ink); font-size: 15px; padding: 10px var(--s2); }
+.evform { display: flex; flex-direction: column; gap: var(--s3); }
+.evform fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.evform .input[aria-invalid="true"] { outline: 2px solid var(--alarm); outline-offset: -1px; }
+.scope { display: flex; gap: var(--s1); background: var(--sunk); border-radius: var(--r-md); padding: 2px; }
+.scope label { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px var(--s2); border-radius: var(--r-sm); font-size: 13px; color: var(--ink-2); cursor: pointer; text-align: center; }
+.scope input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.scope label:has(input:checked) { background: var(--card); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.scope label:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 1px; }
+.daypick legend { font-size: 13px; color: var(--ink-2); margin-bottom: 6px; padding: 0; }
+.daypick div { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--s1); }
+.daypick label { position: relative; }
+.daypick input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.daypick span { display: grid; place-items: center; height: 32px; border-radius: var(--r-sm); border: 1px solid var(--rule-2); font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+.daypick input:checked + span { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.daypick input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.form-error { color: var(--alarm); font-size: 13px; }
 .notes { margin: 0; padding-left: 18px; color: var(--ink-2); display: flex; flex-direction: column; gap: var(--s1); font-size: 14px; }
 
 /* quick add and command menu open near the top, like Things' Quick Entry and Linear's ⌘K */

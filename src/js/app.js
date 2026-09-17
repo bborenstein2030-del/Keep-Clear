@@ -372,7 +372,8 @@
   // ---------------- block dialog ----------------
   function blockDialog(key, date) {
     const plan = App.sim.days[date];
-    const b = plan && plan.blocks.find((x) => x.key === key);
+    // Days outside the planning window (past days, far weeks) still show their events.
+    const b = (plan ? plan.blocks : E.fixedBlocks(date)).find((x) => x.key === key);
     if (!b) return;
     const isToday = date === T();
     const now = E.now();
@@ -419,16 +420,38 @@
       openDialog(body, () => {});
     } else if (b.type === 'event') {
       const ev = App.state.events.find((e) => e.id === b.eventId);
-      let body = dlgHead(esc(b.title), when);
-      body += '<dl>' + (b.location ? '<dt>Where</dt><dd>' + esc(b.location) + '</dd><dt>Travel</dt><dd>' + (ev ? ev.travel : 0) + ' min each way</dd>' : '') + '<dt>Repeats</dt><dd>' + (ev && ev.days ? ev.days.map((d) => U.DAY_SHORT[d]).join(', ') + ' weekly' : 'No') + '</dd></dl>';
-      body += '<div class="dlg-actions">' + (ev && ev.days ? '<button class="btn" data-dlg="ev-skipday">Skip this day</button>' : '') + '<button class="btn btn-danger" data-dlg="ev-delete">Delete' + (ev && ev.days ? ' every week' : '') + '</button></div>';
+      if (!ev) return;
+      const recurring = !!ev.days;
+      const WEEK = [1, 2, 3, 4, 5, 6, 0];
+      let body = dlgHead('Edit event', when);
+      body += '<form class="evform" data-dlg-form="event" novalidate>';
+      body += '<label class="field" for="evTitle"><span>Name</span><input class="input" id="evTitle" value="' + esc(ev.title) + '" autocomplete="off" required></label>';
+      if (recurring) {
+        body += '<fieldset class="scope"><legend class="sr">Apply changes to</legend>' +
+          '<label><input type="radio" name="evScope" value="one" checked> Only ' + esc(U.fmtDate(date)) + '</label>' +
+          '<label><input type="radio" name="evScope" value="all"> Every week</label></fieldset>';
+        body += '<fieldset class="daypick" id="evDays" hidden><legend>Repeats on</legend><div>' +
+          WEEK.map((d) => '<label><input type="checkbox" name="evDay" value="' + d + '"' + (ev.days.includes(d) ? ' checked' : '') + '><span>' + U.DAY_SHORT[d] + '</span></label>').join('') + '</div></fieldset>';
+      } else {
+        body += '<label class="field" for="evDate"><span>Date</span><input class="input" type="date" id="evDate" value="' + (ev.date || date) + '" required></label>';
+      }
+      body += '<div class="two"><label class="field" for="evStart"><span>Starts</span><input class="input" type="time" id="evStart" step="300" value="' + U.toInput(b.start) + '" required></label>' +
+        '<label class="field" for="evEnd"><span>Ends</span><input class="input" type="time" id="evEnd" step="300" value="' + U.toInput(b.end) + '" required></label></div>';
+      body += '<label class="field" for="evLoc"><span>Location <span class="faint">(adds travel time)</span></span><input class="input" id="evLoc" value="' + esc(ev.location || '') + '" autocomplete="off"></label>';
+      if (ev.source === 'ics' || ev.source === 'upload') body += '<p class="small faint">Changes stay in Keepclear. The calendar or file it came from isn’t updated.</p>';
+      body += '<p class="form-error" id="evError" role="alert" hidden></p>';
+      body += '<div class="dlg-actions"><button class="btn btn-primary" type="submit">Save</button>' +
+        (recurring ? '<button class="btn" type="button" data-dlg="ev-skipday">Skip this day</button>' : '') +
+        '<button class="btn btn-quiet btn-danger" type="button" data-dlg="ev-delete">Delete' + (recurring ? ' every week' : '') + '</button></div></form>';
+
       openDialog(body, (act) => {
-        if (!ev) return;
         const idx = App.state.events.indexOf(ev);
+        if (act === 'save') return saveEvent(ev, date, recurring);
         if (act === 'ev-skipday') ev.skipDates = (ev.skipDates || []).concat(date);
         if (act === 'ev-delete') App.state.events = App.state.events.filter((e) => e !== ev);
+        if (act !== 'ev-skipday' && act !== 'ev-delete') return;
         closeDialog();
-        commit({ replan: date === T() || touchesToday(ev), flip: true });
+        commit({ replan: true, flip: true });
         toast((act === 'ev-delete' ? 'Deleted ' : 'Skipped ') + esc(ev.title) + (act === 'ev-delete' ? '.' : ' on ' + U.fmtDate(date) + '.'), {
           label: 'Undo', run: () => {
             if (act === 'ev-delete') App.state.events.splice(Math.max(0, idx), 0, ev);
@@ -437,7 +460,59 @@
           },
         });
       });
+      const title = $('#evTitle');
+      if (title) { title.focus(); title.select(); }
     }
+  }
+
+  function saveEvent(ev, date, recurring) {
+    const err = $('#evError');
+    const fail = (msg, fieldId) => {
+      err.textContent = msg; err.hidden = false;
+      const f = fieldId && $('#' + fieldId);
+      if (f) { f.setAttribute('aria-invalid', 'true'); f.focus(); }
+    };
+    $$('.evform [aria-invalid]').forEach((f) => f.removeAttribute('aria-invalid'));
+    const title = $('#evTitle').value.trim();
+    const startVal = $('#evStart').value, endVal = $('#evEnd').value;
+    if (!title) return fail('Give the event a name.', 'evTitle');
+    if (!startVal) return fail('Add a start time.', 'evStart');
+    if (!endVal) return fail('Add an end time.', 'evEnd');
+    const start = U.fromInput(startVal), end = U.fromInput(endVal);
+    if (end <= start) return fail('The end time has to be after the start time.', 'evEnd');
+    const location = $('#evLoc').value.trim();
+    const travel = location ? (ev.location ? ev.travel || App.state.settings.travelDefault : App.state.settings.travelDefault) : 0;
+    const before = { ...ev, days: ev.days ? ev.days.slice() : undefined, skipDates: (ev.skipDates || []).slice() };
+    const scope = recurring ? ($('input[name="evScope"]:checked') || {}).value : 'all';
+    let summary, undo;
+
+    if (recurring && scope === 'one') {
+      // Pull this one day out of the series and give it its own event.
+      ev.skipDates = (ev.skipDates || []).concat(date);
+      const single = addEvent({ title, date, start, end, location, travel, kind: ev.kind }, ev.source);
+      summary = esc(title) + ' on ' + U.fmtDate(date) + ' is now ' + range(start, end) + '.';
+      undo = () => { App.state.events = App.state.events.filter((x) => x !== single); ev.skipDates = before.skipDates; };
+    } else {
+      let when;
+      if (recurring) {
+        const days = $$('input[name="evDay"]:checked').map((c) => Number(c.value));
+        if (!days.length) return fail('Pick at least one day.', null);
+        ev.days = days;
+        when = 'every ' + [1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d)).map((d) => U.DAY_SHORT[d]).join(', ');
+      } else {
+        const newDate = $('#evDate').value;
+        if (!newDate) return fail('Pick a date.', 'evDate');
+        ev.date = newDate;
+        when = U.fmtDate(newDate);
+        App.ui.calWeek = U.weekStart(newDate); App.ui.calDay = newDate;
+      }
+      Object.assign(ev, { title, start, end, location, travel });
+      summary = esc(title) + ' is now ' + when + ', ' + range(start, end) + '.';
+      undo = () => { Object.keys(ev).forEach((k) => { if (!(k in before)) delete ev[k]; }); Object.assign(ev, before); };
+    }
+    closeDialog();
+    commit({ replan: true, flip: true });
+    toast(summary, { label: 'Undo', run: () => { undo(); commit({ replan: true, flip: true }); } });
   }
 
   function blockAction(act, b, t) {
@@ -802,6 +877,7 @@
     document.addEventListener('change', (e) => {
       const el = e.target;
       const S = App.state, s = S.settings;
+      if (el.name === 'evScope') { const days = $('#evDays'); if (days) days.hidden = el.value !== 'all'; return; }
       if (el.dataset.action === 'friend-sel') {
         if (el.checked) App.ui.friendSel.add(el.dataset.id); else App.ui.friendSel.delete(el.dataset.id);
         return render();
