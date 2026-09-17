@@ -291,29 +291,6 @@
     return html;
   };
 
-  // ======================= Friends =======================
-  V.friends = () => {
-    const S = st(), X = sim(), ui = App.ui;
-    let html = head('Friends', '<button class="btn" data-action="add-friend">Add friend</button>');
-    if (!S.friends.length) return html + '<p class="empty">Add a friend and their usual busy times to see when you’re both free.</p>';
-    html += '<div class="friend-chips">';
-    S.friends.forEach((f) => {
-      html += '<span class="fchip"><label for="fr-' + f.id + '"><input type="checkbox" id="fr-' + f.id + '" data-action="friend-sel" data-id="' + f.id + '"' + (ui.friendSel.has(f.id) ? ' checked' : '') + '>' + esc(f.name) + '</label><button class="btn btn-quiet btn-sm" data-action="friend-del" data-id="' + f.id + '" aria-label="Remove ' + esc(f.name) + '">' + icon('close') + '</button></span>';
-    });
-    html += '</div>';
-    const ids = S.friends.filter((f) => ui.friendSel.has(f.id)).map((f) => f.id);
-    html += '<section class="group"><h2>Best time each day</h2>';
-    if (!ids.length) return html + '<p class="empty">Select a friend above.</p></section>';
-    const wins = E.together(X, ids);
-    if (!wins.length) return html + '<p class="empty">No shared hour this week. Try fewer people.</p></section>';
-    const best = {};
-    wins.forEach((w) => { if (!best[w.k] || w.end - w.start > best[w.k].end - best[w.k].start) best[w.k] = w; });
-    Object.values(best).forEach((w) => {
-      html += '<div class="line"><span><b>' + (w.k === X.today ? 'Today' : U.fmtDate(w.k)) + '</b> <span class="mono">' + range(w.start, w.end) + '</span> <span class="faint">' + dur(w.end - w.start) + '</span></span><button class="btn btn-quiet btn-sm" data-action="hangout" data-date="' + w.k + '" data-start="' + w.start + '" data-end="' + w.end + '">Add to calendar</button></div>';
-    });
-    return html + '</section>';
-  };
-
   // ======================= Recap =======================
   V.recap = () => {
     const S = st(), ui = App.ui, T = sim().today;

@@ -94,7 +94,6 @@
     calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     tasks: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="m3.5 6.3 1.4 1.4 2.3-2.6M3.5 11.8l1.4 1.4 2.3-2.6"/><circle cx="5.2" cy="17.5" r="1.2"/>',
     habits: '<path d="M4 18c3-1 4.5-4 5-7 .6 3 2 6 5 7"/><path d="M14 18c1.8-.7 3.3-2.6 4-5"/><circle cx="9" cy="6.5" r="2.2"/>',
-    friends: '<circle cx="8.5" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.4"/><path d="M3 19c.8-3 3-4.6 5.5-4.6S13.2 16 14 19M14.5 15.2c2.6-.5 5.3.7 6 3.8"/>',
     recap: '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
     more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',

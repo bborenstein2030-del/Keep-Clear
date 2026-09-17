@@ -17,7 +17,7 @@ Then open http://localhost:4178. There are no dependencies and no build step bey
 
 | File | What it does |
 | --- | --- |
-| `src/js/engine.js` | Scheduler: travel and buffers, protected free time, splitting tasks across days, energy-aware placement, reflow, forecast, overcommitment, friend overlap |
+| `src/js/engine.js` | Scheduler: travel and buffers, protected free time, splitting tasks across days, energy-aware placement, reflow, forecast, overcommitment |
 | `src/js/ai.js` | Reads language and files: event sentences, brain dumps, estimates, syllabus dates, .ics calendar exports. Uses Claude when the page runs as an artifact with the `sample` capability, and a built-in parser otherwise |
 | `src/js/data.js` | Empty starting state and saving to localStorage |
 | `src/js/views.js` | Screen renderers |

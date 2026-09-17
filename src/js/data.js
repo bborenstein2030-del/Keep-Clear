@@ -17,7 +17,6 @@
       tasks: [],
       history: [],
       habits: [],
-      friends: [],
       ideas: [],
       plans: {},
       log: {}, // one summary per day you had Keepclear open, feeds the weekly recap
@@ -31,6 +30,7 @@
       const T = U.todayKey();
       if (saved.plans) for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
       saved.log = saved.log || {};
+      delete saved.friends; // Friends feature removed until sign-in exists
       return saved;
     }
     return empty();

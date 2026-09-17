@@ -115,7 +115,7 @@ kbd {
 .rail-help:hover { color: var(--ink); }
 
 .main { min-width: 0; width: 100%; max-width: 1060px; padding: var(--s8) var(--s10) 96px; }
-.main[data-route="tasks"], .main[data-route="habits"], .main[data-route="friends"], .main[data-route="recap"], .main[data-route="settings"] { max-width: 760px; }
+.main[data-route="tasks"], .main[data-route="habits"], .main[data-route="recap"], .main[data-route="settings"] { max-width: 760px; }
 .tabbar { display: none; }
 
 .page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s3) var(--s6); margin-bottom: var(--s6); }
@@ -299,14 +299,6 @@ button.blk:hover { filter: brightness(0.96); }
 .wd.planned { background: transparent; border: 1px dashed var(--ink-3); color: var(--ink-2); }
 .wd.done { background: var(--pine); color: var(--on-pine); }
 .wd.today { font-weight: 700; }
-
-/* ---------- friends ---------- */
-.friend-chips { display: flex; flex-wrap: wrap; gap: var(--s2); }
-.fchip { display: inline-flex; align-items: center; gap: 2px; padding: 2px 2px 2px 10px; border-radius: var(--r-md); border: 1px solid var(--rule-2); font-size: 14px; }
-.fchip label { display: flex; align-items: center; gap: var(--s2); }
-.fchip input { accent-color: var(--pine); }
-.fchip .btn { padding: var(--s1); }
-.fchip .ic { width: 13px; height: 13px; }
 
 /* ---------- recap ---------- */
 .lede { font-family: var(--f-display); font-size: 21px; line-height: 1.45; max-width: 36ch; }
@@ -528,7 +520,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     calendar: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
     tasks: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="m3.5 6.3 1.4 1.4 2.3-2.6M3.5 11.8l1.4 1.4 2.3-2.6"/><circle cx="5.2" cy="17.5" r="1.2"/>',
     habits: '<path d="M4 18c3-1 4.5-4 5-7 .6 3 2 6 5 7"/><path d="M14 18c1.8-.7 3.3-2.6 4-5"/><circle cx="9" cy="6.5" r="2.2"/>',
-    friends: '<circle cx="8.5" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.4"/><path d="M3 19c.8-3 3-4.6 5.5-4.6S13.2 16 14 19M14.5 15.2c2.6-.5 5.3.7 6 3.8"/>',
     recap: '<path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>',
     more: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
@@ -579,7 +570,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       tasks: [],
       history: [],
       habits: [],
-      friends: [],
       ideas: [],
       plans: {},
       log: {}, // one summary per day you had Keepclear open, feeds the weekly recap
@@ -593,6 +583,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       const T = U.todayKey();
       if (saved.plans) for (const k of Object.keys(saved.plans)) if (k !== T) delete saved.plans[k];
       saved.log = saved.log || {};
+      delete saved.friends; // Friends feature removed until sign-in exists
       return saved;
     }
     return empty();
@@ -1112,38 +1103,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       else snap.actual[b.heavy ? 'heavy' : 'light'] += b.actual || b.end - b.start;
     });
     return snap;
-  };
-
-  // ---------- friends ----------
-  E.myFreeIntervals = (sim, k) => {
-    const plan = sim.days[k];
-    if (!plan) return [];
-    const from = k === sim.today ? E.now() : S.settings.wake;
-    return plan.blocks
-      .filter((b) => !b.ghost && (b.type === 'free' || b.type === 'open' || b.type === 'habit'))
-      .map((b) => [Math.max(b.start, from), b.end])
-      .filter(([a, b]) => b - a > 0)
-      .sort((a, b) => a[0] - b[0])
-      .reduce((acc, iv) => {
-        const last = acc[acc.length - 1];
-        if (last && iv[0] <= last[1] + 5) last[1] = Math.max(last[1], iv[1]); else acc.push(iv.slice());
-        return acc;
-      }, []);
-  };
-  E.friendFree = (f, k) => U.subtract([[f.wake, Math.min(f.bed, 1439)]], (f.busy[U.dow(k)] || []));
-  E.together = (sim, friendIds, days = 7, minLen = 60) => {
-    const out = [];
-    sim.order.slice(0, days).forEach((k) => {
-      let common = E.myFreeIntervals(sim, k);
-      friendIds.forEach((id) => {
-        const f = S.friends.find((x) => x.id === id);
-        const ff = E.friendFree(f, k);
-        const busy = U.subtract([[0, 1440]], ff);
-        common = U.subtract(common, busy);
-      });
-      common.filter(([a, b]) => b - a >= minLen).forEach(([a, b]) => out.push({ k, start: a, end: b }));
-    });
-    return out;
   };
 
   // ---------- activity suggestions ----------
@@ -1983,29 +1942,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     return html;
   };
 
-  // ======================= Friends =======================
-  V.friends = () => {
-    const S = st(), X = sim(), ui = App.ui;
-    let html = head('Friends', '<button class="btn" data-action="add-friend">Add friend</button>');
-    if (!S.friends.length) return html + '<p class="empty">Add a friend and their usual busy times to see when you’re both free.</p>';
-    html += '<div class="friend-chips">';
-    S.friends.forEach((f) => {
-      html += '<span class="fchip"><label for="fr-' + f.id + '"><input type="checkbox" id="fr-' + f.id + '" data-action="friend-sel" data-id="' + f.id + '"' + (ui.friendSel.has(f.id) ? ' checked' : '') + '>' + esc(f.name) + '</label><button class="btn btn-quiet btn-sm" data-action="friend-del" data-id="' + f.id + '" aria-label="Remove ' + esc(f.name) + '">' + icon('close') + '</button></span>';
-    });
-    html += '</div>';
-    const ids = S.friends.filter((f) => ui.friendSel.has(f.id)).map((f) => f.id);
-    html += '<section class="group"><h2>Best time each day</h2>';
-    if (!ids.length) return html + '<p class="empty">Select a friend above.</p></section>';
-    const wins = E.together(X, ids);
-    if (!wins.length) return html + '<p class="empty">No shared hour this week. Try fewer people.</p></section>';
-    const best = {};
-    wins.forEach((w) => { if (!best[w.k] || w.end - w.start > best[w.k].end - best[w.k].start) best[w.k] = w; });
-    Object.values(best).forEach((w) => {
-      html += '<div class="line"><span><b>' + (w.k === X.today ? 'Today' : U.fmtDate(w.k)) + '</b> <span class="mono">' + range(w.start, w.end) + '</span> <span class="faint">' + dur(w.end - w.start) + '</span></span><button class="btn btn-quiet btn-sm" data-action="hangout" data-date="' + w.k + '" data-start="' + w.start + '" data-end="' + w.end + '">Add to calendar</button></div>';
-    });
-    return html + '</section>';
-  };
-
   // ======================= Recap =======================
   V.recap = () => {
     const S = st(), ui = App.ui, T = sim().today;
@@ -2136,13 +2072,13 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       calWeek: null, calDay: null, calScrolled: null,
       upload: null, uploadBusy: '',
       dumpDraft: '', dump: null, dumpBusy: false,
-      friendSel: new Set(), recapIdx: 0,
+      recapIdx: 0,
     },
   };
   window.App = App;
 
-  const ROUTES = ['today', 'calendar', 'tasks', 'habits', 'friends', 'recap', 'settings'];
-  const NAV = [['today', 'Today'], ['calendar', 'Calendar'], ['tasks', 'Tasks'], ['habits', 'Goals'], ['friends', 'Friends'], ['recap', 'Weekly recap'], ['settings', 'Settings']];
+  const ROUTES = ['today', 'calendar', 'tasks', 'habits', 'recap', 'settings'];
+  const NAV = [['today', 'Today'], ['calendar', 'Calendar'], ['tasks', 'Tasks'], ['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']];
   // A day with a gap in the middle that nothing is allowed to fill.
   const LOGO = '<svg class="logo" viewBox="0 0 34 34" aria-hidden="true"><rect x="1.25" y="1.25" width="31.5" height="31.5" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="6" y="7" width="22" height="5" rx="1.5" fill="var(--pine)"/><rect x="6" y="14.5" width="22" height="5" rx="1.5" fill="var(--sun)"/><rect x="6" y="22" width="22" height="5" rx="1.5" fill="var(--pine)"/></svg>';
   const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -2188,7 +2124,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     main.dataset.route = App.route;
     main.innerHTML = V[App.route]();
     $$('[data-route]').forEach((a) => {
-      const cur = a.dataset.route === App.route || (a.dataset.route === 'more' && ['habits', 'friends', 'recap', 'settings'].includes(App.route));
+      const cur = a.dataset.route === App.route || (a.dataset.route === 'more' && ['habits', 'recap', 'settings'].includes(App.route));
       if (cur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     const open = App.state.tasks.filter((t) => !t.done && !t.dropped).length;
@@ -2331,7 +2267,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       { label: 'Reflow the rest of today', group: 'Actions', key: 'R', run: reflow },
       { label: 'Brain dump', group: 'Actions', run: () => { location.hash = 'tasks'; setTimeout(() => { const d = $('.disclose'); if (d) { d.open = true; $('#dumpText').focus(); } }, 30); } },
       { label: 'Import a calendar file', group: 'Actions', run: () => { location.hash = 'calendar'; setTimeout(() => { const d = $('.disclose'); if (d) d.open = true; }, 30); } },
-      nav('today', 'Today', 'T'), nav('calendar', 'Calendar'), nav('tasks', 'Tasks'), nav('habits', 'Goals'), nav('friends', 'Friends'), nav('recap', 'Weekly recap'), nav('settings', 'Settings'),
+      nav('today', 'Today', 'T'), nav('calendar', 'Calendar'), nav('tasks', 'Tasks'), nav('habits', 'Goals'), nav('recap', 'Weekly recap'), nav('settings', 'Settings'),
       { label: 'Keyboard shortcuts', group: 'Help', key: '?', run: shortcutsHelp },
     ];
     let items = commands.filter((c) => !words.length || hit(c.label));
@@ -2537,12 +2473,10 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     } else if (b.type === 'free' || b.type === 'open') {
       const ideas = E.suggest(Math.max(b.start, isToday ? now : 0), b.end, 3);
       const S = App.state;
-      const friendsFree = S.friends.filter((f) => U.subtract([[b.start, b.end]], U.subtract([[0, 1440]], E.friendFree(f, date))).some(([x, y]) => y - x >= 30)).map((f) => f.name);
       let body = dlgHead(b.type === 'free' ? 'Protected free time' : 'Open time', when + ' · ' + dur(b.end - b.start));
       if (b.type === 'free') body += '<p class="small muted">Part of your daily ' + dur(S.settings.minFree) + ' minimum. Tasks never go here.</p>';
       body += '<ul class="notes">' + ideas.map((i) => '<li>' + esc(i.t) + ' <span class="faint">' + dur(i.min) + '</span></li>').join('') + '</ul>';
       if (!S.settings.interests.length) body += '<p class="small faint">Pick interests in <a href="#settings" data-dlg="close">Settings</a> for better ideas.</p>';
-      if (friendsFree.length) body += '<p class="small muted">Also free: ' + esc(friendsFree.join(', ')) + '</p>';
       openDialog(body, () => {});
     } else if (b.type === 'event') {
       const ev = App.state.events.find((e) => e.id === b.eventId);
@@ -2742,7 +2676,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     },
     'more-menu': () => {
       openDialog(dlgHead('More') + '<nav class="nav" aria-label="More">' +
-        [['habits', 'Goals'], ['friends', 'Friends'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
+        [['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
         '</nav><button class="btn" data-action="command">Search</button>', () => {});
     },
     reflow,
@@ -2887,35 +2821,12 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       s.interests = s.interests.includes(i) ? s.interests.filter((x) => x !== i) : s.interests.concat(i);
       commit();
     },
-    'friend-del': (el) => {
-      const f = App.state.friends.find((x) => x.id === el.dataset.id);
-      App.state.friends = App.state.friends.filter((x) => x !== f);
-      App.ui.friendSel.delete(el.dataset.id);
-      commit();
-      if (f) toast('Removed ' + esc(f.name) + '.', { label: 'Undo', run: () => { App.state.friends.push(f); App.ui.friendSel.add(f.id); commit(); } });
-    },
-    'add-friend': () => {
-      openDialog(dlgHead('Add a friend') +
-        '<form data-form="friend" style="display:flex;flex-direction:column;gap:12px"><label class="field" for="friendName"><span>Name</span><input class="input" id="friendName" autocomplete="off" required></label>' +
-        '<label class="field" for="friendBusy"><span>When are they usually busy?</span><textarea class="input" id="friendBusy" rows="3" placeholder="classes MWF 9–2, work Tue/Thu 6–9pm"></textarea></label>' +
-        '<div class="dlg-actions"><button class="btn btn-primary" type="submit">Add friend</button><button class="btn btn-quiet" type="button" data-dlg="close">Cancel</button></div></form>', () => {});
-    },
-    hangout: (el) => {
-      const ids = [...App.ui.friendSel].filter((id) => App.state.friends.some((f) => f.id === id));
-      const names = ids.map((id) => App.state.friends.find((f) => f.id === id).name);
-      const start = Number(el.dataset.start), end = Math.min(Number(el.dataset.end), start + 120);
-      const date = el.dataset.date;
-      const ev = addEvent({ title: 'Hang out with ' + names.join(', '), date, start, end, kind: 'social' }, 'typed');
-      commit({ replan: date === T() });
-      toast('Added to your calendar, ' + U.fmtDate(date) + ' ' + range(start, end) + '.', undoRemove('events', ev));
-    },
     'recap-week': (el) => { App.ui.recapIdx = Number(el.dataset.i); render(); },
     reset: () => {
-      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals, friends and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
         if (act !== 'ok') return;
         App.state = Data.clear();
         E.bind(App.state);
-        App.ui.friendSel = new Set();
         App.ui.dumpDraft = ''; App.ui.dump = null; App.ui.upload = null;
         closeDialog();
         recompute(); save(); render();
@@ -3004,10 +2915,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
       const el = e.target;
       const S = App.state, s = S.settings;
       if (el.name === 'evScope') { const days = $('#evDays'); if (days) days.hidden = el.value !== 'all'; return; }
-      if (el.dataset.action === 'friend-sel') {
-        if (el.checked) App.ui.friendSel.add(el.dataset.id); else App.ui.friendSel.delete(el.dataset.id);
-        return render();
-      }
       if (el.id === 'icsFile' && el.files && el.files[0]) {
         el.files[0].text().then((text) => {
           const { events, skipped } = AI.parseIcs(text, T());
@@ -3086,27 +2993,7 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
         toast('Added ' + esc(h.title) + ', ' + h.perWeek + '× a week for ' + dur(h.minutes) + '.', undoRemove('habits', h));
         return;
       }
-      if (kind === 'friend') {
-        const name = $('#friendName').value.trim();
-        const busyText = $('#friendBusy').value.trim();
-        if (!name) return;
-        const busy = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
-        let unread = 0;
-        if (busyText) {
-          const parsed = await AI.parseEvents(busyText.replace(/,\s*/g, '\n'), T());
-          parsed.events.forEach((ev) => {
-            const days = ev.days || (ev.date ? [U.dow(ev.date)] : []);
-            days.forEach((d) => busy[d].push([ev.start, ev.end]));
-          });
-          unread = busyText.split(/\n|,|;/).filter((x) => x.trim()).length - parsed.events.length;
-        }
-        const f = { id: U.uid('f'), name, shared: true, wake: 450, bed: 1410, busy };
-        App.state.friends.push(f);
-        App.ui.friendSel.add(f.id);
-        closeDialog();
-        commit();
-        toast('Added ' + esc(name) + '.' + (unread > 0 ? ' Couldn’t read ' + unread + ' part' + (unread === 1 ? '' : 's') + ' of their week. Include days and times, like “Tue/Thu 6–9pm”.' : ''));
-      }
+
     });
 
     document.addEventListener('dragover', (e) => { const z = e.target.closest && e.target.closest('#dropzone'); if (z) e.preventDefault(); });
@@ -3137,7 +3024,6 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
     E.bind(App.state);
     App.ui.calWeek = U.weekStart(U.todayKey());
     App.ui.calDay = U.todayKey();
-    App.ui.friendSel = new Set(App.state.friends.map((f) => f.id));
     recompute();
     save();
     renderShell();

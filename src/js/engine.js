@@ -506,38 +506,6 @@
     return snap;
   };
 
-  // ---------- friends ----------
-  E.myFreeIntervals = (sim, k) => {
-    const plan = sim.days[k];
-    if (!plan) return [];
-    const from = k === sim.today ? E.now() : S.settings.wake;
-    return plan.blocks
-      .filter((b) => !b.ghost && (b.type === 'free' || b.type === 'open' || b.type === 'habit'))
-      .map((b) => [Math.max(b.start, from), b.end])
-      .filter(([a, b]) => b - a > 0)
-      .sort((a, b) => a[0] - b[0])
-      .reduce((acc, iv) => {
-        const last = acc[acc.length - 1];
-        if (last && iv[0] <= last[1] + 5) last[1] = Math.max(last[1], iv[1]); else acc.push(iv.slice());
-        return acc;
-      }, []);
-  };
-  E.friendFree = (f, k) => U.subtract([[f.wake, Math.min(f.bed, 1439)]], (f.busy[U.dow(k)] || []));
-  E.together = (sim, friendIds, days = 7, minLen = 60) => {
-    const out = [];
-    sim.order.slice(0, days).forEach((k) => {
-      let common = E.myFreeIntervals(sim, k);
-      friendIds.forEach((id) => {
-        const f = S.friends.find((x) => x.id === id);
-        const ff = E.friendFree(f, k);
-        const busy = U.subtract([[0, 1440]], ff);
-        common = U.subtract(common, busy);
-      });
-      common.filter(([a, b]) => b - a >= minLen).forEach(([a, b]) => out.push({ k, start: a, end: b }));
-    });
-    return out;
-  };
-
   // ---------- activity suggestions ----------
   const IDEAS = {
     guitar: [{ t: 'Learn the intro to a song you like', min: 20 }, { t: 'Play one song start to finish, no stopping', min: 15, calm: true }],

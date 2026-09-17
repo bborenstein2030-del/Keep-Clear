@@ -10,13 +10,13 @@
       calWeek: null, calDay: null, calScrolled: null,
       upload: null, uploadBusy: '',
       dumpDraft: '', dump: null, dumpBusy: false,
-      friendSel: new Set(), recapIdx: 0,
+      recapIdx: 0,
     },
   };
   window.App = App;
 
-  const ROUTES = ['today', 'calendar', 'tasks', 'habits', 'friends', 'recap', 'settings'];
-  const NAV = [['today', 'Today'], ['calendar', 'Calendar'], ['tasks', 'Tasks'], ['habits', 'Goals'], ['friends', 'Friends'], ['recap', 'Weekly recap'], ['settings', 'Settings']];
+  const ROUTES = ['today', 'calendar', 'tasks', 'habits', 'recap', 'settings'];
+  const NAV = [['today', 'Today'], ['calendar', 'Calendar'], ['tasks', 'Tasks'], ['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']];
   // A day with a gap in the middle that nothing is allowed to fill.
   const LOGO = '<svg class="logo" viewBox="0 0 34 34" aria-hidden="true"><rect x="1.25" y="1.25" width="31.5" height="31.5" rx="6" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="6" y="7" width="22" height="5" rx="1.5" fill="var(--pine)"/><rect x="6" y="14.5" width="22" height="5" rx="1.5" fill="var(--sun)"/><rect x="6" y="22" width="22" height="5" rx="1.5" fill="var(--pine)"/></svg>';
   const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -62,7 +62,7 @@
     main.dataset.route = App.route;
     main.innerHTML = V[App.route]();
     $$('[data-route]').forEach((a) => {
-      const cur = a.dataset.route === App.route || (a.dataset.route === 'more' && ['habits', 'friends', 'recap', 'settings'].includes(App.route));
+      const cur = a.dataset.route === App.route || (a.dataset.route === 'more' && ['habits', 'recap', 'settings'].includes(App.route));
       if (cur) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     const open = App.state.tasks.filter((t) => !t.done && !t.dropped).length;
@@ -205,7 +205,7 @@
       { label: 'Reflow the rest of today', group: 'Actions', key: 'R', run: reflow },
       { label: 'Brain dump', group: 'Actions', run: () => { location.hash = 'tasks'; setTimeout(() => { const d = $('.disclose'); if (d) { d.open = true; $('#dumpText').focus(); } }, 30); } },
       { label: 'Import a calendar file', group: 'Actions', run: () => { location.hash = 'calendar'; setTimeout(() => { const d = $('.disclose'); if (d) d.open = true; }, 30); } },
-      nav('today', 'Today', 'T'), nav('calendar', 'Calendar'), nav('tasks', 'Tasks'), nav('habits', 'Goals'), nav('friends', 'Friends'), nav('recap', 'Weekly recap'), nav('settings', 'Settings'),
+      nav('today', 'Today', 'T'), nav('calendar', 'Calendar'), nav('tasks', 'Tasks'), nav('habits', 'Goals'), nav('recap', 'Weekly recap'), nav('settings', 'Settings'),
       { label: 'Keyboard shortcuts', group: 'Help', key: '?', run: shortcutsHelp },
     ];
     let items = commands.filter((c) => !words.length || hit(c.label));
@@ -411,12 +411,10 @@
     } else if (b.type === 'free' || b.type === 'open') {
       const ideas = E.suggest(Math.max(b.start, isToday ? now : 0), b.end, 3);
       const S = App.state;
-      const friendsFree = S.friends.filter((f) => U.subtract([[b.start, b.end]], U.subtract([[0, 1440]], E.friendFree(f, date))).some(([x, y]) => y - x >= 30)).map((f) => f.name);
       let body = dlgHead(b.type === 'free' ? 'Protected free time' : 'Open time', when + ' · ' + dur(b.end - b.start));
       if (b.type === 'free') body += '<p class="small muted">Part of your daily ' + dur(S.settings.minFree) + ' minimum. Tasks never go here.</p>';
       body += '<ul class="notes">' + ideas.map((i) => '<li>' + esc(i.t) + ' <span class="faint">' + dur(i.min) + '</span></li>').join('') + '</ul>';
       if (!S.settings.interests.length) body += '<p class="small faint">Pick interests in <a href="#settings" data-dlg="close">Settings</a> for better ideas.</p>';
-      if (friendsFree.length) body += '<p class="small muted">Also free: ' + esc(friendsFree.join(', ')) + '</p>';
       openDialog(body, () => {});
     } else if (b.type === 'event') {
       const ev = App.state.events.find((e) => e.id === b.eventId);
@@ -616,7 +614,7 @@
     },
     'more-menu': () => {
       openDialog(dlgHead('More') + '<nav class="nav" aria-label="More">' +
-        [['habits', 'Goals'], ['friends', 'Friends'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
+        [['habits', 'Goals'], ['recap', 'Weekly recap'], ['settings', 'Settings']].map(([r, l]) => '<a href="#' + r + '" data-dlg="close">' + l + '</a>').join('') +
         '</nav><button class="btn" data-action="command">Search</button>', () => {});
     },
     reflow,
@@ -761,35 +759,12 @@
       s.interests = s.interests.includes(i) ? s.interests.filter((x) => x !== i) : s.interests.concat(i);
       commit();
     },
-    'friend-del': (el) => {
-      const f = App.state.friends.find((x) => x.id === el.dataset.id);
-      App.state.friends = App.state.friends.filter((x) => x !== f);
-      App.ui.friendSel.delete(el.dataset.id);
-      commit();
-      if (f) toast('Removed ' + esc(f.name) + '.', { label: 'Undo', run: () => { App.state.friends.push(f); App.ui.friendSel.add(f.id); commit(); } });
-    },
-    'add-friend': () => {
-      openDialog(dlgHead('Add a friend') +
-        '<form data-form="friend" style="display:flex;flex-direction:column;gap:12px"><label class="field" for="friendName"><span>Name</span><input class="input" id="friendName" autocomplete="off" required></label>' +
-        '<label class="field" for="friendBusy"><span>When are they usually busy?</span><textarea class="input" id="friendBusy" rows="3" placeholder="classes MWF 9–2, work Tue/Thu 6–9pm"></textarea></label>' +
-        '<div class="dlg-actions"><button class="btn btn-primary" type="submit">Add friend</button><button class="btn btn-quiet" type="button" data-dlg="close">Cancel</button></div></form>', () => {});
-    },
-    hangout: (el) => {
-      const ids = [...App.ui.friendSel].filter((id) => App.state.friends.some((f) => f.id === id));
-      const names = ids.map((id) => App.state.friends.find((f) => f.id === id).name);
-      const start = Number(el.dataset.start), end = Math.min(Number(el.dataset.end), start + 120);
-      const date = el.dataset.date;
-      const ev = addEvent({ title: 'Hang out with ' + names.join(', '), date, start, end, kind: 'social' }, 'typed');
-      commit({ replan: date === T() });
-      toast('Added to your calendar, ' + U.fmtDate(date) + ' ' + range(start, end) + '.', undoRemove('events', ev));
-    },
     'recap-week': (el) => { App.ui.recapIdx = Number(el.dataset.i); render(); },
     reset: () => {
-      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals, friends and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
+      openDialog(dlgHead('Clear all data?', 'Your events, tasks, goals and history in this browser will be deleted. This can’t be undone.') + '<div class="dlg-actions"><button class="btn btn-danger" data-dlg="ok">Clear everything</button><button class="btn btn-quiet" data-dlg="close">Cancel</button></div>', (act) => {
         if (act !== 'ok') return;
         App.state = Data.clear();
         E.bind(App.state);
-        App.ui.friendSel = new Set();
         App.ui.dumpDraft = ''; App.ui.dump = null; App.ui.upload = null;
         closeDialog();
         recompute(); save(); render();
@@ -878,10 +853,6 @@
       const el = e.target;
       const S = App.state, s = S.settings;
       if (el.name === 'evScope') { const days = $('#evDays'); if (days) days.hidden = el.value !== 'all'; return; }
-      if (el.dataset.action === 'friend-sel') {
-        if (el.checked) App.ui.friendSel.add(el.dataset.id); else App.ui.friendSel.delete(el.dataset.id);
-        return render();
-      }
       if (el.id === 'icsFile' && el.files && el.files[0]) {
         el.files[0].text().then((text) => {
           const { events, skipped } = AI.parseIcs(text, T());
@@ -960,27 +931,7 @@
         toast('Added ' + esc(h.title) + ', ' + h.perWeek + '× a week for ' + dur(h.minutes) + '.', undoRemove('habits', h));
         return;
       }
-      if (kind === 'friend') {
-        const name = $('#friendName').value.trim();
-        const busyText = $('#friendBusy').value.trim();
-        if (!name) return;
-        const busy = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
-        let unread = 0;
-        if (busyText) {
-          const parsed = await AI.parseEvents(busyText.replace(/,\s*/g, '\n'), T());
-          parsed.events.forEach((ev) => {
-            const days = ev.days || (ev.date ? [U.dow(ev.date)] : []);
-            days.forEach((d) => busy[d].push([ev.start, ev.end]));
-          });
-          unread = busyText.split(/\n|,|;/).filter((x) => x.trim()).length - parsed.events.length;
-        }
-        const f = { id: U.uid('f'), name, shared: true, wake: 450, bed: 1410, busy };
-        App.state.friends.push(f);
-        App.ui.friendSel.add(f.id);
-        closeDialog();
-        commit();
-        toast('Added ' + esc(name) + '.' + (unread > 0 ? ' Couldn’t read ' + unread + ' part' + (unread === 1 ? '' : 's') + ' of their week. Include days and times, like “Tue/Thu 6–9pm”.' : ''));
-      }
+
     });
 
     document.addEventListener('dragover', (e) => { const z = e.target.closest && e.target.closest('#dropzone'); if (z) e.preventDefault(); });
@@ -1011,7 +962,6 @@
     E.bind(App.state);
     App.ui.calWeek = U.weekStart(U.todayKey());
     App.ui.calDay = U.todayKey();
-    App.ui.friendSel = new Set(App.state.friends.map((f) => f.id));
     recompute();
     save();
     renderShell();
