@@ -582,9 +582,11 @@ dialog.dlg-cmd .dlg { padding: 0; gap: 0; }
    supabase/schema.sql is what keeps each person's data private.
    Never put a secret or service_role key here. */
 window.KEEPCLEAR_CONFIG = {
-  supabaseUrl: '',          // e.g. 'https://abcd1234.supabase.co'
-  supabaseKey: '',          // Project Settings > API Keys > publishable key (or the legacy anon key)
-  providers: ['google'],    // add 'apple' once Sign in with Apple is configured in Supabase
+  supabaseUrl: 'https://xsnzfsrpuoqdqylqdvje.supabase.co',
+  supabaseKey: 'sb_publishable_h2Y4OTetDCcAYzfeE15-Gg_1w35vsKE', // publishable key: safe to be public
+  // Sign-in buttons to offer. Each one only appears once it's turned on in Supabase
+  // (Authentication > Sign In / Providers), so nothing shows up broken.
+  providers: ['google', 'apple'],
 };
 
 /* App state: starts empty, with best-effort local persistence. */
@@ -1821,6 +1823,15 @@ window.KEEPCLEAR_CONFIG = {
     } catch (e) {
       set({ status: 'error', message: 'Couldn’t load sign-in. Check your connection and reload the page.' });
       return;
+    }
+    // Only offer sign-in buttons for providers that are actually turned on in Supabase.
+    try {
+      const res = await fetch(cfg.supabaseUrl + '/auth/v1/settings', { headers: { apikey: cfg.supabaseKey } });
+      const settings = await res.json();
+      const on = (settings && settings.external) || {};
+      A.providers = A.providers.filter((p) => on[p] === true);
+    } catch (e) {
+      A.providers = [];
     }
     // Supabase advises against awaiting other Supabase calls inside this callback.
     client.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); });

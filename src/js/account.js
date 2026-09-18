@@ -50,6 +50,15 @@
       set({ status: 'error', message: 'Couldn’t load sign-in. Check your connection and reload the page.' });
       return;
     }
+    // Only offer sign-in buttons for providers that are actually turned on in Supabase.
+    try {
+      const res = await fetch(cfg.supabaseUrl + '/auth/v1/settings', { headers: { apikey: cfg.supabaseKey } });
+      const settings = await res.json();
+      const on = (settings && settings.external) || {};
+      A.providers = A.providers.filter((p) => on[p] === true);
+    } catch (e) {
+      A.providers = [];
+    }
     // Supabase advises against awaiting other Supabase calls inside this callback.
     client.auth.onAuthStateChange((event, session) => { setTimeout(() => onAuth(session), 0); });
     await client.auth.getSession(); // finishes a sign-in redirect if there is one
