@@ -42,7 +42,8 @@
       '<div class="rail-actions"><button class="rail-btn" data-action="quick-add"><span>New</span>' + V.kbd('C') + '</button>' +
       '<button class="rail-btn" data-action="command"><span>Search</span>' + V.kbd(V.mod + 'K') + '</button></div>' +
       '<nav class="nav" aria-label="Main">' + NAV.map(([r, l]) => '<a href="#' + r + '" data-route="' + r + '"><span>' + l + '</span><span class="count" data-count="' + r + '"></span></a>').join('') + '</nav>' +
-      '<div class="rail-foot"><div id="railAccount"></div><button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button></div>';
+      '<div class="rail-foot"><div id="railAccount"></div><button class="rail-help" data-action="shortcuts">Keyboard shortcuts ' + V.kbd('?') + '</button>' +
+      (Account.inArtifact ? '' : '<p class="rail-legal"><a href="privacy.html">Privacy</a> · <a href="terms.html">Terms</a></p>') + '</div>';
     renderAccount();
     $('#tabbar').innerHTML =
       '<a href="#today" data-route="today">Today</a><a href="#calendar" data-route="calendar">Calendar</a>' +
@@ -86,7 +87,8 @@
     if (p.includes('google') || p.includes('apple')) body += '<p class="signin-or"><span>or</span></p>';
     body += '<form data-form="email-link" class="signin-email"><label class="field" for="signinEmail"><span>Email</span><input class="input" id="signinEmail" type="email" autocomplete="email" required placeholder="you@example.com"></label>' +
       '<button class="btn btn-primary" type="submit">Email me a sign-in link</button></form>';
-    body += '<p class="form-error" id="signinError" role="alert" hidden></p></div>';
+    body += '<p class="form-error" id="signinError" role="alert" hidden></p>' +
+      '<p class="signin-legal">By continuing, you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p></div>';
     if (Account.message) body += '<p class="small faint">' + esc(Account.message) + '</p>';
     openDialog(body, () => {});
   }

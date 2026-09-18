@@ -3,6 +3,7 @@
 dist/margin.html  page content for publishing as an artifact (no doctype or head, per the artifact contract)
 dist/index.html   the same page wrapped in a full HTML document, for local preview
 """
+import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -26,6 +27,9 @@ def build():
         + head + '</head>\n<body>\n<div class="app">' + body + '</body>\n</html>\n'
     )
     (DIST / "index.html").write_text(full)
+    # Privacy Policy and Terms are plain standalone pages.
+    for f in (SRC / "legal").iterdir():
+        shutil.copy(f, DIST / f.name)
     print("built", DIST / "margin.html", len(page) // 1024, "KB")
 
 

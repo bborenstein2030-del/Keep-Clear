@@ -1,0 +1,23 @@
+/* Shared styles for the Privacy Policy and Terms pages, matching the app. */
+:root {
+  --paper: #f6f7f4; --ink: #161d19; --ink-2: #4f5953; --ink-3: #848d88; --rule: #e3e6e1; --pine: #1e5b49;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --paper: #111513; --ink: #e4e9e6; --ink-2: #a8b2ac; --ink-3: #78827d; --rule: #242b27; --pine: #7fc7ab; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.65 "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+.doc { max-width: 680px; margin: 0 auto; padding: 40px 16px 80px; }
+h1, h2 { font-family: "IBM Plex Serif", Georgia, serif; font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: 32px; margin: 8px 0 4px; }
+h2 { font-size: 20px; margin: 36px 0 8px; }
+p, ul { margin: 0 0 14px; }
+ul { padding-left: 20px; }
+li { margin-bottom: 6px; }
+b { font-weight: 600; }
+a { color: var(--pine); text-underline-offset: 2px; }
+.back { font-size: 14px; }
+.updated { color: var(--ink-3); font-size: 14px; margin-bottom: 28px; }
+.foot { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 14px; }
+:focus-visible { outline: 2px solid var(--pine); outline-offset: 2px; }

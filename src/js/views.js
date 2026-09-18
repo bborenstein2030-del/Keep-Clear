@@ -420,7 +420,8 @@
 
     const backup = U.store.get('keepclear.backup.v1');
     html += '<section class="group"><h2>Data</h2><p class="faint small">' + (Account.user ? 'Saved to your account and this browser. ' : 'Saved in this browser. ') + (AI.mode === 'claude' ? 'Claude reads what you type and upload.' : 'Typing is read by the built-in parser.') + '</p>' +
-      '<div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button>' + (backup ? '<button class="btn btn-quiet btn-sm" data-action="restore-backup">Restore earlier browser data</button>' : '') + '</div></section>';
+      '<div class="row"><button class="btn btn-danger btn-sm" data-action="reset">Clear all data</button>' + (backup ? '<button class="btn btn-quiet btn-sm" data-action="restore-backup">Restore earlier browser data</button>' : '') + '</div>' +
+      (Account.inArtifact ? '' : '<p class="small faint"><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>') + '</section>';
     return html + '</div>';
   };
 
